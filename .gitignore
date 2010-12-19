@@ -1,0 +1,4 @@
+*.o
+*.cu_o
+bin
+obj
