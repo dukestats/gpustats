@@ -16,6 +16,8 @@ extern int DIM,MEAN_CHD_DIM,PACK_DIM,CHD_DIM,LOGDET_OFFSET,DATA_PADDED_DIM,NCHUN
 
 #define SIGMA_BLOCK_SIZE		128
 #define SIGMA_THREAD_SUM_SIZE		25
+#define MAX_GPU_COUNT 8
+
 
 //#define LOGPDF
 
@@ -107,8 +109,6 @@ void doStore(int instance);
 void doRestore(int instance);
 
 void handleStoreRestoreQueue(int instance);
-
-const int MAX_GPU_COUNT = 8;
 
 
 #endif // __GPUSTATS_COMMON__

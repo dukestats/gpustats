@@ -1,10 +1,19 @@
 #ifndef _INCLUDED_MVNPDF
 #define _INCLUDED_MVNPDF
 
-#include <stdio.h>
-#include <cuda_runtime_api.h>
+#ifdef __cplusplus
+extern "C" {
+#endif
 
-#include "gpustats_common.h"
+#include "mvnpdf.h"
+
+typedef struct {
+  REAL* data;
+  int rows;
+  int pad_columns;
+  int columns;
+  int stride;
+} PMatrix;
 
 /* Thread-Block design:
  * 1 thread per datum*density
@@ -145,5 +154,8 @@ cudaError_t gpuMvNormalPDF(
     return cudaSuccess;
 }
 
+#ifdef __cplusplus
+}
+#endif
 
 #endif // _INCLUDED_MVNPDF

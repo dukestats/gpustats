@@ -1,10 +1,13 @@
 CC := gcc
 CXX = g++
-LINK = g++ -fPIC -m64
+CCLINK = gcc -shared -W1
+CCFLAGS = -fPIC -g -Wall
 CXXFLAGS = -fPIC -m64
 INCPATH =
 LIBPATH =
 OSNAME := $(shell uname)
+
+LFLAGS = -L. -lgpustats
 
 CUDA_SDK_PATH   := $(HOME)/cuda_sdk
 CUDA_PATH = /usr/local/cuda
@@ -18,7 +21,7 @@ NVCC_DBG_FLAGS = -Xcompiler -fno-strict-aliasing,-fPIC
 EXECUTABLE := test
 CUFILES = mvnpdf.cu
 CU_DEPS = gpustats_common.h
-CFILES := gpustats_common.c test.c
+CFILES := gpustats_common.c
 USECUBLAS        := 1
 OBJDIR = obj
 LIBDIR = lib
@@ -30,28 +33,33 @@ OBJS +=  $(patsubst %.cu,%.cu_o,$(notdir $(CUFILES)))
 
 VERBOSE := -
 
-output: makedirs $(OBJS)
-	$(VERBOSE)$(LINK) -o $(TARGET) $(OBJS) $(CUDA_LIB)
+libgpustats.so: makedirs $(OBJS)
+	gcc -shared -W1,-soname,libgpustats.so -o libgpustats.so $(OBJS) -lc $(CUDA_LIB)
+
+runpy: libgpustats.so
+    LD_LIBRARY_PATH=.:$LD_LIBRARY_PATH; python scratch.py
+
+test: libgpustats.so
+	$(VERBOSE)$(CC) -std=c99 test.c -o test $(CUDA_INC) $(LFLAGS)
+
+cython: libgpustats.so
+	-python build_cython.py build_ext --inplace
 
 makedirs:
 	$(VERBOSE)mkdir -p $(LIBDIR)
 	$(VERBOSE)mkdir -p $(OBJDIR)
 	$(VERBOSE)mkdir -p $(TARGETDIR)
 
-clean :
-	-rm -f *.o
-	-rm -f *.cu_o
+clean:
+	-rm -rf *.so *.o *.cu_o build/
 
 #### CUDA files
 
 %.o: %.c
-	$(VERBOSE)$(CXX) $(CXXFLAGS) -c $*.c -o $@ $(INCPATH) $(CUDA_INC) $(CUDA_SDK_INC)
+	$(VERBOSE)$(CC) $(CCFLAGS) -c $*.c -o $@ $(INCPATH) $(CUDA_INC) $(CUDA_SDK_INC)
 
 %.c_o : %.c
-	$(GCC) $(PROFILE) -c $< -o $@ $(LOCAL_INC)
-
-%.cpp_o : %.cpp
-	$(CXX) $(CXXFLAGS) $(INCPATH) $(LOCAL_INC) $(CUDA_INC) $(CUDA_SDK_INC) $(PROFILE) -c $< -o $@
+	$(CC) $(PROFILE) -c $< -o $@
 
 %.cu_o : %.cu $(CUDA_HEADERS)
-	$(VERBOSE)$(NVCC) $(NVCC_DBG_FLAGS) -c $< -o $@ -I. $(INCPATH) $(LOCAL_INC) $(CUDA_INC) $(CUDA_SDK_INC) -DUNIX
+	$(VERBOSE)$(NVCC) $(NVCC_DBG_FLAGS) -c $< -o $@ -I. $(INCPATH) $(CUDA_INC) $(CUDA_SDK_INC) -DUNIX
