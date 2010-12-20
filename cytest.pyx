@@ -2,24 +2,10 @@ cimport numpy as cnp
 from numpy cimport ndarray
 import numpy as np
 
+cimport gpustats as gps
+
 cdef int is_contiguous(ndarray arr):
     return arr.flags.contiguous
-
-cdef extern from "cuda.h":
-    enum cudaError_t:
-        pass
-
-cdef extern from "mvnpdf.h":
-    cudaError_t gpuMvNormalPDF(
-        float* iData,
-        float* iDensityInfo,
-        float* oMeasure,
-        int iD,
-        int iN,
-        int iTJ,
-        int PACK_DIM,
-        int DIM
-        )
 
 def unvech(v):
     # quadratic formula, correct fp error
@@ -58,9 +44,9 @@ def mvnpdf(ndarray data, ndarray mean, ndarray cov):
     packed_dim = np.empty(k * (k + 3) / 2)
 
     packed_params = np.empty(packed_dim, dtype=np.float32)
-    gpuMvNormalPDF(<float*> data.data,
-                    <float*> packed_params.data,
-                    <float*> output.data,
-                    k, n, 1, 16, 16)
+    gps.gpuMvNormalPDF(<float*> data.data,
+                        <float*> packed_params.data,
+                        <float*> output.data,
+                        k, n, 1, 16, 16)
 
 
