@@ -7,6 +7,24 @@ extern "C" {
 
 #include "mvnpdf.h"
 
+#define BLOCK_SIZE 16
+#define BLOCK_TOTAL 256
+
+void inline h_to_d(float* h_ptr, float* d_ptr, int n){
+  cudaMemcpy(d_ptr, h_ptr, n * sizeof(float), cudaMemcpyHostToDevice);
+}
+
+void inline d_to_h(float* d_ptr, float* h_ptr, int n){
+  cudaMemcpy(h_ptr, d_ptr, n * sizeof(float), cudaMemcpyDeviceToHost);
+}
+
+__device__ int next_multiple(int k, int mult) {
+  if (k % mult)
+	return k + (mult - k % mult);
+  else
+	return k;
+}
+
 typedef struct {
   REAL* data;
   int rows;
@@ -101,11 +119,11 @@ __global__ void mvNormalPDF(
         discrim += sum * sum;
     }
     REAL d;
+	REAL mydim = (REAL)iD;
     if (isLogScaled>0) {
-        d = log(tP)-0.5 * (discrim + tLogDet);
+	  d = log(tP)-0.5 * (discrim + tLogDet + (LOG_2_PI * mydim));
     } else {
-        REAL mydim = (REAL)iD;
-        d = tP * exp(-0.5 * (discrim + tLogDet + (LOG_2_PI*mydim)));
+	  d = tP * exp(-0.5 * (discrim + tLogDet + (LOG_2_PI*mydim)));
     }
     #if defined(TWISTED_DENSITY)
         result_trans[thidx * DATA_IN_BLOCK + thidy] = d;
@@ -123,10 +141,109 @@ __global__ void mvNormalPDF(
     }
 }
 
+__global__ void mvNormalPDF2(
+                    float* inData, /** Data-vector; padded */
+                    float* inDensityInfo, /** Density info; already padded */
+                    float* outPDF, /** Resultant PDF */
+                    int iD,
+                    int iN
+                ) {
+  // OK, let's keep it simple
+
+  int LOGDET_OFFSET = iD * (iD + 3) / 2;
+  int PACK_DIM = next_multiple(iD * (iD + 3) / 2 + 2, 16);
+  int DATA_PADDED_DIM = next_multiple(iD, BASE_DATAPADED_DIM);
+
+  const int thidx = threadIdx.x;
+  const int thidy = threadIdx.y;
+
+  const int block_size = blockDim.x * blockDim.y;
+  const int block_start = blockIdx.x * block_size;
+  const int data_offset = thidx * blockDim.x + thidy;
+  const int obs_num = block_start + data_offset;
+
+  const int data_start = obs_num * DATA_PADDED_DIM;
+  const int rel_data_start = data_offset * DATA_PADDED_DIM;
+
+  extern __shared__ float sData[];
+
+  float* densityInfo = sData;
+  float* cache_data = sData + PACK_DIM;
+
+  for (int i = data_start; i < data_start + iD; ++i) {
+	cache_data[i - block_start * DATA_PADDED_DIM] = inData[data_start + i];
+  }
+
+  // read mean, cov, scalar, logdet into shared memory
+  if (obs_num  < PACK_DIM) {
+	densityInfo[obs_num] = inDensityInfo[obs_num];
+  }
+  __syncthreads();
+
+  float* pMean = densityInfo;
+  float* pSigma = densityInfo + iD;
+  float pScalar = densityInfo[LOGDET_OFFSET];
+  float logdet = densityInfo[LOGDET_OFFSET + 1];
+
+  float discrim = 0;
+  float sum;
+  for (int i = 0; i < iD; ++i)
+  {
+   	sum = 0;
+   	for(int j=0; j <= i; j++) {
+   	  sum += *pSigma++ * (cache_data[rel_data_start + j] - pMean[j]);
+   	}
+   	discrim += sum * sum;
+  }
+
+  if (obs_num < iN) {
+	outPDF[obs_num] = (log(pScalar) - 0.5 * (discrim + logdet +		\
+   	 										 (LOG_2_PI * (float) iD)));
+  }
+}
+
+cudaError_t gpuMvNormalPDF2(
+                    float* hData, /** Data-vector; padded */
+                    float* hParams, /** Density info; already padded */
+                    float* hPDF, /** Resultant PDF */
+                    int iD,
+                    int iN,
+					int PACK_DIM,
+					int PADDED_DATA_DIM
+                    ) {
+
+  float* dData;
+  float* dParams;
+  float* dPDF;
+
+  cudaMalloc(&dData, PADDED_DATA_DIM * iN * sizeof(float));
+  cudaMalloc(&dParams, PACK_DIM * sizeof(float));
+  cudaMalloc(&dPDF, iN * sizeof(float));
+
+  h_to_d(hData, dData, iN * PADDED_DATA_DIM);
+  h_to_d(hParams, dParams, PACK_DIM);
+
+  dim3 gridPDF(iN/BLOCK_TOTAL, 1);
+  if (iN % BLOCK_TOTAL != 0)
+	gridPDF.x += 1;
+  dim3 blockPDF(BLOCK_SIZE, BLOCK_SIZE);
+  int sharedMemSize = PACK_DIM * SIZE_REAL + PADDED_DATA_DIM * BLOCK_SIZE * BLOCK_SIZE;
+  mvNormalPDF2<<<gridPDF,blockPDF,sharedMemSize>>>(dData, dParams, dPDF, iD, iN);
+
+  d_to_h(dPDF, hPDF, iN);
+
+  cudaFree(dData);
+  cudaFree(dParams);
+  cudaFree(dPDF);
+
+  return cudaSuccess;
+}
+
+
 cudaError_t gpuMvNormalPDF(
-                    REAL* inData, /** Data-vector; padded */
-                    REAL* inDensityInfo, /** Density info; already padded */
-                    REAL* outPDF, /** Resultant PDF */
+                    REAL* hData, /** Data-vector; padded */
+                    REAL* hParams, /** Density info; already padded */
+                    REAL* hPDF, /** Resultant PDF */
                     int iD,
                     int iN,
                     int iTJ,
@@ -134,25 +251,91 @@ cudaError_t gpuMvNormalPDF(
 					int DIM
                     ) {
 
-    dim3 gridPDF(iN/DATA_IN_BLOCK, iTJ/DENSITIES_IN_BLOCK);
-    if (iN % DATA_IN_BLOCK != 0)
-        gridPDF.x += 1;
-    if (iTJ % DENSITIES_IN_BLOCK != 0)
-        gridPDF.y += 1;
-    dim3 blockPDF(DATA_IN_BLOCK,DENSITIES_IN_BLOCK);
-    #if defined(TWISTED_DENSITY)
-        int sharedMemSize = (DENSITIES_IN_BLOCK * PACK_DIM + DATA_IN_BLOCK * DIM \
-                             + DENSITIES_IN_BLOCK*DATA_IN_BLOCK) * SIZE_REAL;
-    #else
-        int sharedMemSize = (DENSITIES_IN_BLOCK * PACK_DIM + DATA_IN_BLOCK * DIM) * SIZE_REAL;
-    #endif
-    #if defined(LOGPDF)
-        mvNormalPDF<<<gridPDF,blockPDF,sharedMemSize>>>(inData,inDensityInfo,outPDF,iD, iN, iTJ,1);
-    #else
-        mvNormalPDF<<<gridPDF,blockPDF,sharedMemSize>>>(inData,inDensityInfo,outPDF,iD, iN, iTJ,0);
-    #endif
+  float* dData;
+  float* dParams;
+  float* dPDF;
+
+  cudaMalloc(&dData, DIM * iN * sizeof(float));
+  cudaMalloc(&dParams, PACK_DIM * sizeof(float));
+  cudaMalloc(&dPDF, iN * sizeof(float));
+
+  h_to_d(hData, dData, iN);
+  h_to_d(hParams, dParams, PACK_DIM);
+
+  dim3 gridPDF(iN/DATA_IN_BLOCK, iTJ/DENSITIES_IN_BLOCK);
+  if (iN % DATA_IN_BLOCK != 0)
+	gridPDF.x += 1;
+  if (iTJ % DENSITIES_IN_BLOCK != 0)
+	gridPDF.y += 1;
+
+  dim3 blockPDF(DATA_IN_BLOCK,DENSITIES_IN_BLOCK);
+#if defined(TWISTED_DENSITY)
+  int sharedMemSize = (DENSITIES_IN_BLOCK * PACK_DIM + DATA_IN_BLOCK * DIM \
+					   + DENSITIES_IN_BLOCK*DATA_IN_BLOCK) * SIZE_REAL;
+#else
+  int sharedMemSize = (DENSITIES_IN_BLOCK * PACK_DIM + DATA_IN_BLOCK * DIM) * SIZE_REAL;
+#endif
+#if defined(LOGPDF)
+  mvNormalPDF<<<gridPDF,blockPDF,sharedMemSize>>>(dData, dParams, dPDF,iD, iN, iTJ,1);
+#else
+  mvNormalPDF<<<gridPDF,blockPDF,sharedMemSize>>>(dData, dParams, dPDF, iD, iN, iTJ,0);
+#endif
+
+  d_to_h(dPDF, hPDF, iN);
+
+  cudaFree(dData);
+  cudaFree(dParams);
+  cudaFree(dPDF);
+
     return cudaSuccess;
 }
+
+void cpu_mvnormpdf(float* x, float* density, float * output, int D, int N, int T) {
+    int LOGDET_OFFSET = D * (D + 3) / 2;
+	int MEAN_CHD_DIM = D * (D + 3) / 2	+ 2;
+	int PACK_DIM = 16;
+
+	while (MEAN_CHD_DIM > PACK_DIM) {PACK_DIM += 16;}
+	int DATA_PADDED_DIM = 8;
+	while (D > DATA_PADDED_DIM) {DATA_PADDED_DIM += 8;}
+
+    float* xx = (float*) malloc(D * sizeof(float));
+    float mydim = (float) D;
+    int data,component;
+
+    for (data = 0; data < N; data++) {
+        for (component = 0; component < T; component++) {
+            float discrim;
+            float* tData = x + data * DATA_PADDED_DIM;
+            float* tDensityInfo = density + component * PACK_DIM;
+
+            float* tMean = tDensityInfo;			//do we need to unallocate shared/register variables?
+            float* tSigma = tDensityInfo + D;
+            float  tP = tDensityInfo[LOGDET_OFFSET];
+            float  tLogDet = tDensityInfo[LOGDET_OFFSET+1];
+
+            // Do density calculation
+            discrim = 0;
+            for(int i=0; i<D; i++) {
+                float sum = 0;
+                for(int j=0; j<=i; j++) {
+                    sum += *tSigma++ * (tData[j] - tMean[j]); // xx[j] is always calculated since j <= i
+                }
+                discrim += sum * sum;
+            }
+
+            float d = log(tP) - 0.5 * (discrim + tLogDet + (LOG_2_PI*mydim));
+			// printf("discrim: %f\n", discrim);
+			// printf("tP: %f\n", tP);
+			// printf("tLogDet: %f\n", tLogDet);
+			// printf("d: %f\n", d);
+			// printf("idx: %d\n", data * T + component);
+            output[data * T + component] = d;
+        }
+    }
+	free(xx);
+}
+
 
 #ifdef __cplusplus
 }

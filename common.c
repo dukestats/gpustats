@@ -4,7 +4,7 @@
 #include <cuda.h>
 #include <cuda_runtime_api.h>
 
-#include "gpustats_common.h"
+#include "common.h"
 
 #if _WIN32
 	#define isnan(x) ((x) != (x))

@@ -30,7 +30,7 @@ int main(int argc, char *argv[])
   int k = 4;
   int n = 10;
 
-  float* cov = make_random_matrix(k, 0
+  float* cov = make_random_matrix(k, k);
 
   printf("it's alive!\n");
   return 0;
