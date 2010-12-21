@@ -52,12 +52,18 @@ extern int DIM,MEAN_CHD_DIM,PACK_DIM,CHD_DIM,LOGDET_OFFSET,DATA_PADDED_DIM,NCHUN
 #define CUDA_ERROR	1
 #define CUDA_SUCCESS	0
 
-#define SAFE_CUDA(call,ptr)		cudaError_t error = call; \
-								if( error != 0 ) { \
-									fprintf(stderr,"Error %s\n", cudaGetErrorString(error)); \
-									fprintf(stderr,"Ptr = %d\n",ptr); \
-									exit(-1); \
-								}
+#define CATCH_ERR(call) error = call; \
+  if( error != 0 ) {												\
+	fprintf(stderr,"CUDA Error %s\n", cudaGetErrorString(error));	\
+	exit(-1);														\
+  }
+
+#define SAFE_CUDA(call,ptr) error = call; \
+  if( error != 0 ) {											\
+	fprintf(stderr,"Error %s\n", cudaGetErrorString(error));	\
+	fprintf(stderr,"Ptr = %d\n",ptr);							\
+	exit(-1);													\
+  }
 
 
 #define MEMCPY(to,from,length,toType) { int m; \

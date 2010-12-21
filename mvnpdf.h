@@ -6,15 +6,13 @@
 
 #include "common.h"
 
-cudaError_t gpuMvNormalPDF(
-  REAL* inData, /** Data-vector; padded */
-  REAL* inDensityInfo, /** Density info; already padded */
-  REAL* outPDF, /** Resultant PDF */
-  int iD,
-  int iN,
-  int iTJ,
-  int PACK_DIM,
-  int DIM
+void mvnpdf2(float* h_data, /** Data-vector; padded */
+			 float* h_params, /** Density info; already padded */
+			 float* h_pdf, /** Resultant PDF */
+			 int data_dim,
+			 int total_obs,
+			 int param_stride, // with padding
+			 int data_stride // with padding
   );
 
 void cpu_mvnormpdf(float* x, float* density, float * output, int D,

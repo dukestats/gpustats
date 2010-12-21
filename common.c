@@ -16,6 +16,7 @@ REAL *allocateGPURealMemory(int length) {
 #endif
 
 	REAL *data;
+	cudaError_t error;
 	SAFE_CUDA(cudaMalloc((void**) &data, SIZE_REAL * length),data);
 	if (data == NULL) {
 		fprintf(stderr,"Failed to allocate REAL (%d) memory on device!\n",
@@ -39,6 +40,7 @@ INT *allocateGPUIntMemory(int length) {
 #endif
 
 	INT *data;
+	cudaError_t error;
 	SAFE_CUDA(cudaMalloc((void**) &data, SIZE_INT * length),data);
 	if (data == NULL) {
 		fprintf(stderr,"Failed to allocate INT memory on device!\n");
@@ -69,16 +71,19 @@ void freeGPUMemory(void *ptr) {
 }
 
 void storeGPURealMemoryArray(REAL *toGPUPtr, REAL *fromGPUPtr, int length) {
+	cudaError_t error;
 	SAFE_CUDA(cudaMemcpy(toGPUPtr, fromGPUPtr, SIZE_REAL*length, cudaMemcpyDeviceToDevice),toGPUPtr);
 }
 
 void storeGPUIntMemoryArray(INT *toGPUPtr, INT *fromGPUPtr, int length) {
+	cudaError_t error;
 	SAFE_CUDA(cudaMemcpy(toGPUPtr, fromGPUPtr, SIZE_INT*length, cudaMemcpyDeviceToDevice),toGPUPtr);
 }
 
 /* int checkZeros(REAL* dPtr, int length) { */
 /*   // REAL* hPtr = (REAL *) malloc(sizeof(REAL) * length); */
 /*         REAL* hPtr = new REAL[length]; */
+/*  cudaError_t error; */
 /* 	SAFE_CUDA(cudaMemcpy(hPtr, dPtr, sizeof(REAL)*length, cudaMemcpyDeviceToHost),dPtr); */
 /* 	int i; */
 /* 	REAL min = 1e+37f; */
