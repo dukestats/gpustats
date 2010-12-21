@@ -1,4 +1,5 @@
 *.o
+*.so
 *.cu_o
 bin
 obj

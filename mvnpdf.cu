@@ -141,64 +141,67 @@ __global__ void mvNormalPDF(
     }
 }
 
+__device__ float compute_pdf(float* data, float* params, int iD) {
+  const int LOGDET_OFFSET = iD * (iD + 3) / 2;
+  float* mean = params;
+  float* sigma = params + iD;
+  float mult = params[LOGDET_OFFSET];
+  float logdet = params[LOGDET_OFFSET + 1];
+
+  float discrim = 0;
+  float sum;
+
+  for (int i = 0; i < iD; ++i)
+  {
+   	sum = 0;
+   	for(int j=0; j <= i; j++) {
+   	  sum += *sigma++ * (data[j] - mean[j]);
+   	}
+   	discrim += sum * sum;
+  }
+
+  return log(mult) - 0.5 * (discrim + logdet + LOG_2_PI * (float) iD);
+}
+
 __global__ void mvNormalPDF2(
-                    float* inData, /** Data-vector; padded */
-                    float* inDensityInfo, /** Density info; already padded */
+                    float* glob_data, /** Data-vector; padded */
+                    float* glob_params, /** Density info; already padded */
                     float* outPDF, /** Resultant PDF */
                     int iD,
                     int iN
                 ) {
-  // OK, let's keep it simple
-
-  int LOGDET_OFFSET = iD * (iD + 3) / 2;
   int PACK_DIM = next_multiple(iD * (iD + 3) / 2 + 2, 16);
   int DATA_PADDED_DIM = next_multiple(iD, BASE_DATAPADED_DIM);
 
-  const int thidx = threadIdx.x;
-  const int thidy = threadIdx.y;
-
-  const int block_size = blockDim.x * blockDim.y;
-  const int block_start = blockIdx.x * block_size;
-  const int data_offset = thidx * blockDim.x + thidy;
+  const int block_start = blockIdx.x * blockDim.x * blockDim.y;
+  const int data_offset = threadIdx.x * blockDim.x + threadIdx.y;
   const int obs_num = block_start + data_offset;
-
   const int data_start = obs_num * DATA_PADDED_DIM;
   const int rel_data_start = data_offset * DATA_PADDED_DIM;
 
   extern __shared__ float sData[];
 
-  float* densityInfo = sData;
-  float* cache_data = sData + PACK_DIM;
+  float* sh_params = sData;
+  float* sh_data = sData + PACK_DIM;
 
   for (int i = data_start; i < data_start + iD; ++i) {
-	cache_data[i - block_start * DATA_PADDED_DIM] = inData[data_start + i];
+	sh_data[i - block_start * DATA_PADDED_DIM] = glob_data[data_start + i];
   }
 
   // read mean, cov, scalar, logdet into shared memory
-  if (obs_num  < PACK_DIM) {
-	densityInfo[obs_num] = inDensityInfo[obs_num];
+  // TODO: make sure whole thing read into memory
+  if (data_offset < PACK_DIM) {
+	sh_params[data_offset] = glob_params[data_offset];
   }
   __syncthreads();
 
-  float* pMean = densityInfo;
-  float* pSigma = densityInfo + iD;
-  float pScalar = densityInfo[LOGDET_OFFSET];
-  float logdet = densityInfo[LOGDET_OFFSET + 1];
+  float density = compute_pdf(sh_data + rel_data_start,
+							  sh_params, iD);
 
-  float discrim = 0;
-  float sum;
-  for (int i = 0; i < iD; ++i)
-  {
-   	sum = 0;
-   	for(int j=0; j <= i; j++) {
-   	  sum += *pSigma++ * (cache_data[rel_data_start + j] - pMean[j]);
-   	}
-   	discrim += sum * sum;
-  }
+  __syncthreads();
 
   if (obs_num < iN) {
-	outPDF[obs_num] = (log(pScalar) - 0.5 * (discrim + logdet +		\
-   	 										 (LOG_2_PI * (float) iD)));
+	outPDF[obs_num] = density;
   }
 }
 

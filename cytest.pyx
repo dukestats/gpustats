@@ -91,18 +91,18 @@ def mvnpdf(ndarray data, ndarray mean, ndarray chol_sigma, logdet):
     packed_data = pack_data(data)
 
     output = np.empty(len(data), np.float32)
-    gps.gpuMvNormalPDF(<float*> packed_data.data,
-                        <float*> packed_params.data,
-                        <float*> output.data,
-                         k, n, 1,
-                         len(packed_params),
-                         packed_data.shape[1])
-    # gps.gpuMvNormalPDF2(<float*> packed_data.data,
+    # gps.gpuMvNormalPDF(<float*> packed_data.data,
     #                     <float*> packed_params.data,
     #                     <float*> output.data,
-    #                      k, n,
+    #                      k, n, 1,
     #                      len(packed_params),
     #                      packed_data.shape[1])
+    gps.gpuMvNormalPDF2(<float*> packed_data.data,
+                        <float*> packed_params.data,
+                        <float*> output.data,
+                         k, n,
+                         len(packed_params),
+                         packed_data.shape[1])
 
     return output
 
