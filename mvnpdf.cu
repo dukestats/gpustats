@@ -10,15 +10,11 @@ extern "C" {
 #define BLOCK_SIZE 16
 #define BLOCK_TOTAL 256
 
-void inline h_to_d(float* h_ptr, float* d_ptr, int n){
-  cudaError_t error;
-  CATCH_ERR(cudaMemcpy(d_ptr, h_ptr, n * sizeof(float), cudaMemcpyHostToDevice));
-}
+typedef struct {
+  int data_per_block;
+  int params_per_block;
+} TuningInfo;
 
-void inline d_to_h(float* d_ptr, float* h_ptr, int n){
-  cudaError_t error;
-  CATCH_ERR(cudaMemcpy(h_ptr, d_ptr, n * sizeof(float), cudaMemcpyDeviceToHost));
-}
 
 int smem_size() {
   int dev = 0;
@@ -32,6 +28,73 @@ int max_block_threads() {
   cudaDeviceProp deviceProp;
   cudaGetDeviceProperties(&deviceProp, dev);
   return deviceProp.maxThreadsPerBlock;
+}
+
+int compute_shmem(PMatrix* data, PMatrix* params, int nparams, int ndata) {
+  // to hold specified about of data, parameters, and results
+  int result_space = nparams * ndata;
+  int param_space = params->stride * nparams;
+  int data_space = data->stride * ndata;
+
+  return sizeof(float) * (result_space + param_space + data_space);
+}
+
+int next_pow2(int k, int pow2) {
+  // next highest power of two
+  while (k <= pow2 / 2) pow2 /= 2;
+  return pow2;
+}
+
+int get_boxes(int n, int box_size) {
+  // how many boxes of size box_size are needed to hold n things
+  return (n + box_size - 1) / box_size;
+}
+
+void get_tuned_layout(TuningInfo* info, PMatrix* data, PMatrix* params) {
+  // query the device for smem / max # of threads
+  int max_smem = smem_size();
+  int max_threads = max_block_threads();
+
+  // at most max_block_params sets of density parameters per block
+  // for low-dimensional data, better to do more?
+  int max_block_params = 16;
+  int params_per = max_block_params;
+  if (params->rows < max_block_params)
+	params_per = next_pow2(params->rows, max_block_params);
+
+  // hide your kids, hide your wife (auto-tuning the GPU)
+  int data_per;
+  while (1) {
+	data_per = max_threads / params_per;
+	  while (compute_shmem(data, params, params_per, data_per) > max_smem) {
+		if (data_per == 0)
+		  break;
+		data_per /=2;
+	  }
+
+	  // can't fit max_block_params sets of parameters into the shared memory,
+	  // uh oh
+	  if (data_per == 0) {
+		params_per /= 2;
+
+		// start over the tuning
+		continue;
+	  }
+	  else break;
+  }
+
+  info->data_per_block = data_per;
+  info->params_per_block = params_per;
+}
+
+void inline h_to_d(float* h_ptr, float* d_ptr, int n){
+  cudaError_t error;
+  CATCH_ERR(cudaMemcpy(d_ptr, h_ptr, n * sizeof(float), cudaMemcpyHostToDevice));
+}
+
+void inline d_to_h(float* d_ptr, float* h_ptr, int n){
+  cudaError_t error;
+  CATCH_ERR(cudaMemcpy(h_ptr, d_ptr, n * sizeof(float), cudaMemcpyDeviceToHost));
 }
 
 __device__ int next_multiple(int k, int mult) {
@@ -170,43 +233,6 @@ __device__ float compute_pdf(float* data, float* params, int iD) {
   return log(mult) - 0.5 * (discrim + logdet + LOG_2_PI * (float) iD);
 }
 
-
-__global__ void mvnpdf_k_old(PMatrix data, PMatrix params, float* output) {
-  const int block_size = blockDim.x * blockDim.y;
-  const int block_start = blockIdx.x * block_size;
-  const int data_offset = threadIdx.y * blockDim.x + threadIdx.x;
-
-  const int obs_num = block_start + data_offset;
-
-  extern __shared__ float sData[];
-
-  float* sh_params = sData;
-  float* sh_data = sData + params.stride;
-
-  // copy data into shared memory
-  for (int i = obs_num * data.stride;
-  	   i < (obs_num + 1) * data.stride; ++i) {
-  	sh_data[i - block_start * data.stride] = data.buf[i];
-  }
-
-  // read mean, cov, scalar, logdet into shared memory
-  for (int chunk = 0; chunk < params.stride; chunk += block_size)
-  {
-	if (chunk + data_offset < params.stride)
-	  sh_params[chunk + data_offset] = params.buf[chunk + data_offset];
-  }
-
-  __syncthreads();
-
-  float density = compute_pdf(sh_data + data_offset * data.stride,
-							  sh_params, data.cols);
-
-  if (obs_num < data.rows) {
-	output[obs_num] = density;
-  }
-}
-
-
 __global__ void mvnpdf_k(PMatrix data, PMatrix params, float* output) {
   unsigned int num_threads = blockDim.x * blockDim.y;
   unsigned int block_start = blockIdx.x * num_threads;
@@ -245,6 +271,75 @@ __global__ void mvnpdf_k(PMatrix data, PMatrix params, float* output) {
 
   if (obs_num < data.rows) {
 	output[obs_num] = density;
+  }
+}
+
+__global__ void mvnpdf_k2(PMatrix data, PMatrix params, float* output) {
+
+  int num_threads = blockDim.x * blockDim.y;
+
+  int obs_num = blockDim.x * blockIdx.x + threadIdx.x;
+  // threads in row-major order, better per
+  int tid = threadIdx.y * blockDim.x + threadIdx.x;
+
+  // (observation, parameter_set) index in row-major order
+  int result_idx = params.rows * obs_num + threadIdx.y;
+
+  extern __shared__ float sData[];
+
+  // // advance global pointer to start of parameters for this block
+  // float* g_params = params.buf + param_start * params.stride;
+  // float* g_data = data.buf + data_start * data.stride;
+
+  // // how to get to coalesce?
+  // float* g_output = (output + block_size * (params.rows * blockIdx.x +
+  // 											blockIdx.y));
+
+  float* sh_params = sData; // store parameters
+  float* sh_data = sData + blockDim.y * params.stride; // store data
+  float* sh_result = sh_data + blockDim.x * data.stride; // store pdfs
+
+  // starting bytes
+  int data_start = blockDim.x * blockIdx.x * data.stride;
+  int params_start = blockDim.y * blockIdx.y * params.stride;
+
+  int data_total = data.rows * data.stride;
+  int params_total = params.rows * params.stride;
+
+  // time to work together
+
+  // coalesce data into shared memory in chunks
+  int idx;
+
+  // read mean, cov, scalar, logdet into shared memory
+  for (int chunk = params_start;
+	   chunk < params_start + blockDim.y * params.stride;
+	   chunk += num_threads)
+  {
+	idx = chunk + tid;
+	if (idx < params_total)
+	  sh_params[idx - params_start] = params.buf[idx];
+  }
+  __syncthreads();
+
+  for (int chunk = data_start; chunk < data_start + blockDim.x * data.stride;
+	   chunk += num_threads)
+  {
+	idx = chunk + tid;
+	if (idx < data_total)
+	  sh_data[idx - data_start] = data.buf[idx];
+  }
+
+  __syncthreads();
+
+  // now compute your own pdf
+  // need to coalesce back into global memory?
+
+  if (obs_num < data.rows) {
+	float density = compute_pdf(sh_data + threadIdx.x * data.stride,
+								sh_params + threadIdx.y * params.stride,
+								data.cols);
+	output[result_idx] = density;
   }
 }
 
@@ -287,8 +382,9 @@ cudaError_t invoke_mvnpdf3(PMatrix data, PMatrix params, float* d_pdf) {
   printf("sharedMemSize: %d\n", sharedMemSize);
   printf("block: %d x %d, grid: %d x %d\n", blockPDF.x, blockPDF.y,
 		 gridPDF.x, gridPDF.y);
+  printf("nparams: %d\n", params.rows);
 
-  mvnpdf_k<<<gridPDF,blockPDF,sharedMemSize>>>(data, params, d_pdf);
+  mvnpdf_k2<<<gridPDF,blockPDF,sharedMemSize>>>(data, params, d_pdf);
   return cudaSuccess;
 }
 
@@ -310,11 +406,11 @@ void mvnpdf2(float* h_data, /** Data-vector; padded */
   PMatrix pdata, pparams;
 
   CATCH_ERR(cudaMalloc(&d_data, data_stride * total_obs * sizeof(float)));
-  CATCH_ERR(cudaMalloc(&d_params, param_stride * sizeof(float)));
-  CATCH_ERR(cudaMalloc(&d_pdf, total_obs * sizeof(float)));
+  CATCH_ERR(cudaMalloc(&d_params, param_stride * nparams * sizeof(float)));
+  CATCH_ERR(cudaMalloc(&d_pdf, total_obs * nparams * sizeof(float)));
 
   h_to_d(h_data, d_data, total_obs * data_stride);
-  h_to_d(h_params, d_params, param_stride);
+  h_to_d(h_params, d_params, param_stride * nparams);
 
   PMatrix_init(&pdata, d_data, total_obs, data_dim, data_stride);
   PMatrix_init(&pparams, d_params, nparams,
@@ -322,73 +418,13 @@ void mvnpdf2(float* h_data, /** Data-vector; padded */
 
   invoke_mvnpdf3(pdata, pparams, d_pdf);
 
-  d_to_h(d_pdf, h_pdf, total_obs);
+  d_to_h(d_pdf, h_pdf, total_obs * nparams);
 
   cudaFree(d_data);
   cudaFree(d_params);
   cudaFree(d_pdf);
 }
 
-
-typedef struct {
-  int data_per_block;
-  int params_per_block;
-} TuningInfo;
-
-void get_tuned_layout(TuningInfo* info, PMatrix* data, PMatrix* params) {
-  // query the device for smem / max # of threads
-  int max_smem = smem_size();
-  int max_threads = max_block_threads();
-
-  // at most max_block_params sets of density parameters per block
-  // for low-dimensional data, better to do more?
-  int max_block_params = 16;
-  int params_per = max_block_params;
-  if (params->rows < max_block_params)
-	params_per = next_pow2(params->rows, max_block_params);
-
-  // hide your kids, hide your wife (auto-tuning the GPU)
-  int data_per;
-  while (1) {
-	data_per = max_threads / params_per;
-	  while (compute_shmem(data, params, params_per, data_per) > max_smem) {
-		if (data_per == 0)
-		  break;
-		data_per /=2;
-	  }
-
-	  // can't fit max_block_params sets of parameters into the shared memory,
-	  // uh oh
-	  if (data_per == 0) {
-		params_per /= 2;
-
-		// start over the tuning
-		continue;
-	  }
-	  else break;
-  }
-
-  info->data_per_block = data_per;
-  info->params_per_block = params_per;
-}
-
-int compute_shmem(PMatrix* data, PMatrix* params, int nparams, int ndata) {
-  int result_space = nparams * ndata;
-  int param_space = params->stride * nparams;
-  int data_space = data->stride * ndata;
-
-  return sizeof(float) * (result_space + param_space + data_space);
-}
-
-int next_pow2(int k, int pow2) {
-  // next highest power of two
-  while (k <= pow2 / 2) pow2 /= 2;
-  return pow2;
-}
-
-int get_boxes(int n, int box_size) {
-  return (n + box_size - 1) / box_size;
-}
 
 cudaError_t gpuMvNormalPDF(
                     REAL* hData, /** Data-vector; padded */
