@@ -20,6 +20,13 @@ void inline d_to_h(float* d_ptr, float* h_ptr, int n){
   CATCH_ERR(cudaMemcpy(h_ptr, d_ptr, n * sizeof(float), cudaMemcpyDeviceToHost));
 }
 
+int smem_size() {
+  int dev = 0;
+  cudaDeviceProp deviceProp;
+  cudaGetDeviceProperties(&deviceProp, dev);
+  return deviceProp.sharedMemPerBlock;
+}
+
 __device__ int next_multiple(int k, int mult) {
   if (k % mult)
 	return k + (mult - k % mult);
@@ -180,7 +187,6 @@ __global__ void mvnpdf_k(PMatrix data, PMatrix params, float* output) {
   const int block_start = blockIdx.x * block_size;
   const int data_offset = threadIdx.x * blockDim.x + threadIdx.y;
   const int obs_num = block_start + data_offset;
-  const int rel_data_start = data_offset * data.stride;
 
   extern __shared__ float sData[];
 
@@ -201,7 +207,7 @@ __global__ void mvnpdf_k(PMatrix data, PMatrix params, float* output) {
   	sh_data[i - block_start * data.stride] = data.buf[i];
   }
 
-  float density = compute_pdf(sh_data + rel_data_start,
+  float density = compute_pdf(sh_data + data_offset * data.stride,
 							  sh_params, data.cols);
 
   if (obs_num < data.rows) {
@@ -220,7 +226,8 @@ cudaError_t invoke_mvnpdf2(PMatrix data, PMatrix params, float* d_pdf) {
   dim3 blockPDF(block_size, block_size);
   int sharedMemSize = SIZE_REAL * (params.stride + data.stride * block_total);
 
-  // printf("sharedMemSize: %d\n", sharedMemSize);
+  printf("sharedMemSize: %d\n", sharedMemSize);
+  printf("max shared: %d\n", smem_size());
   mvnpdf_k<<<gridPDF,blockPDF,sharedMemSize>>>(data, params, d_pdf);
   return cudaSuccess;
 }
@@ -250,7 +257,7 @@ void mvnpdf2(float* h_data, /** Data-vector; padded */
 
   PMatrix_init(&pdata, d_data, total_obs, data_dim, data_stride);
   PMatrix_init(&pparams, d_params, 1, data_dim * (data_dim + 3) / 2 + 2,
-			   param_stride);
+  			   param_stride);
 
   invoke_mvnpdf2(pdata, pparams, d_pdf);
 

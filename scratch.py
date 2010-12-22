@@ -67,12 +67,12 @@ if __name__ == '__main__':
 
     data, mean, cov = load_testdata()
 
-    # n = 1e6
-    # k = 10
+    n = 1e6
+    k = 8
 
-    # data = randn(n, k)
-    # mean = randn(k)
-    # cov = random_cov(k) # np.cov(data.T)
+    data = randn(n, k)
+    mean = randn(k)
+    cov = random_cov(k) # np.cov(data.T)
 
     chol_sigma = chol(cov)
     ichol_sigma = L.inv(chol_sigma)
@@ -85,26 +85,23 @@ if __name__ == '__main__':
     print testmod.cpu_mvnpdf(data, mean, ichol_sigma, logdet)
     print testmod.mvnpdf(data, mean, ichol_sigma, logdet)
 
-    # runs = 10
+    gruns = 10
 
-    # _s = time.clock()
-    # for i in xrange(runs):
-    #     print '.'
-    #     testmod.mvnpdf(data, mean, ichol_sigma, logdet)
+    _s = time.clock()
+    for i in xrange(gruns):
+        testmod.mvnpdf(data, mean, ichol_sigma, logdet)
 
-    # gpu_speed = (time.clock() - _s) / runs
+    gpu_speed = (time.clock() - _s) / gruns
 
-    # _s = time.clock()
-    # for i in xrange(runs):
-    #     print '.'
-    #     testmod.cpu_mvnpdf(data, mean, ichol_sigma, logdet)
+    cruns = 5
+    _s = time.clock()
+    for i in xrange(cruns):
+        testmod.cpu_mvnpdf(data, mean, ichol_sigma, logdet)
 
-    # print ''
+    cpu_speed = (time.clock() - _s) / cruns
 
-    # cpu_speed = (time.clock() - _s) / runs
-
-    # print 'CPU speed: %.3f' % (cpu_speed * 1000)
-    # print 'GPU speed: %.3f' % (gpu_speed * 1000)
+    print 'CPU speed: %.3f' % (cpu_speed * 1000)
+    print 'GPU speed: %.3f' % (gpu_speed * 1000)
 
 
 
