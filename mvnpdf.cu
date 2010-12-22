@@ -143,7 +143,7 @@ __global__ void mvNormalPDF(
 }
 
 __device__ float compute_pdf(float* data, float* params, int iD) {
-  const int LOGDET_OFFSET = iD * (iD + 3) / 2;
+  unsigned int LOGDET_OFFSET = iD * (iD + 3) / 2;
   float* mean = params;
   float* sigma = params + iD;
   float mult = params[LOGDET_OFFSET];
@@ -165,7 +165,6 @@ __device__ float compute_pdf(float* data, float* params, int iD) {
 }
 
 
-
 // Simple strided matrix data structure, far as I can tell there's little or no
 // overhead in the compiled version.
 typedef struct {
@@ -182,10 +181,11 @@ void PMatrix_init(PMatrix* mat, float* data, int rows, int cols, int stride){
   mat->stride = stride;
 }
 
-__global__ void mvnpdf_k(PMatrix data, PMatrix params, float* output) {
+__global__ void mvnpdf_k_old(PMatrix data, PMatrix params, float* output) {
   const int block_size = blockDim.x * blockDim.y;
   const int block_start = blockIdx.x * block_size;
-  const int data_offset = threadIdx.x * blockDim.x + threadIdx.y;
+  const int data_offset = threadIdx.y * blockDim.x + threadIdx.x;
+
   const int obs_num = block_start + data_offset;
 
   extern __shared__ float sData[];
@@ -193,19 +193,20 @@ __global__ void mvnpdf_k(PMatrix data, PMatrix params, float* output) {
   float* sh_params = sData;
   float* sh_data = sData + params.stride;
 
+  // copy data into shared memory
+  for (int i = obs_num * data.stride;
+  	   i < (obs_num + 1) * data.stride; ++i) {
+  	sh_data[i - block_start * data.stride] = data.buf[i];
+  }
+
   // read mean, cov, scalar, logdet into shared memory
   for (int chunk = 0; chunk < params.stride; chunk += block_size)
   {
 	if (chunk + data_offset < params.stride)
 	  sh_params[chunk + data_offset] = params.buf[chunk + data_offset];
   }
-  __syncthreads();
 
-  // copy data into shared memory
-  for (int i = obs_num * data.stride;
-  	   i < (obs_num + 1) * data.stride; ++i) {
-  	sh_data[i - block_start * data.stride] = data.buf[i];
-  }
+  __syncthreads();
 
   float density = compute_pdf(sh_data + data_offset * data.stride,
 							  sh_params, data.cols);
@@ -215,17 +216,54 @@ __global__ void mvnpdf_k(PMatrix data, PMatrix params, float* output) {
   }
 }
 
+
+__global__ void mvnpdf_k(PMatrix data, PMatrix params, float* output) {
+  unsigned int num_threads = blockDim.x * blockDim.y;
+  unsigned int block_start = blockIdx.x * num_threads;
+
+  // threads in row-major order, better perf
+  unsigned int tid = threadIdx.y * blockDim.x + threadIdx.x;
+  unsigned int obs_num = block_start + tid;
+
+  extern __shared__ float sData[];
+
+  float* sh_params = sData;
+  float* sh_data = sData + params.stride;
+
+  float* block_data = data.buf + block_start * data.stride;
+
+  // coalesce data into shared memory in chunks
+  unsigned int idx;
+  for (int chunk = 0; chunk < data.stride; ++chunk)
+  {
+	idx = chunk * num_threads + tid;
+	sh_data[idx] = block_data[idx];
+  }
+  __syncthreads();
+
+  // read mean, cov, scalar, logdet into shared memory
+  for (int chunk = 0; chunk < params.stride; chunk += num_threads)
+  {
+	if (chunk + tid < params.stride)
+	  sh_params[chunk + tid] = params.buf[chunk + tid];
+  }
+
+  __syncthreads();
+
+  float density = compute_pdf(sh_data + tid * data.cols,
+							  sh_params, data.cols);
+
+  if (obs_num < data.rows) {
+	output[obs_num] = density;
+  }
+}
+
 cudaError_t invoke_mvnpdf2(PMatrix data, PMatrix params, float* d_pdf) {
 
-  int block_size = 16;
-  int block_total = block_size * block_size;
-
-  dim3 gridPDF(data.rows / block_total, 1);
-  if (data.rows % block_total)
-	gridPDF.x += 1;
-  dim3 blockPDF(block_size, block_size);
-  int sharedMemSize = SIZE_REAL * (params.stride + data.stride * block_total);
-
+  int block_size = 256;
+  dim3 gridPDF((data.rows + block_size - 1) / block_size, 1);
+  dim3 blockPDF(block_size, 1);
+  int sharedMemSize = SIZE_REAL * (params.stride + data.stride * block_size);
   printf("sharedMemSize: %d\n", sharedMemSize);
   printf("max shared: %d\n", smem_size());
   mvnpdf_k<<<gridPDF,blockPDF,sharedMemSize>>>(data, params, d_pdf);

@@ -106,6 +106,30 @@ def mvnpdf(ndarray data, ndarray mean, ndarray chol_sigma, logdet):
 
     return output
 
+def mvnpdf(ndarray data, ndarray mean, ndarray chol_sigma, logdet):
+    cdef ndarray output, packed_params, packed_data
+    cdef gps.cudaError_t res
+    n, k = (<object> data).shape
+
+    packed_params = pack_pdf_params(mean, chol_sigma, logdet)
+    packed_data = pack_data(data)
+
+    output = np.empty(len(data), np.float32)
+    # gps.gpuMvNormalPDF(<float*> packed_data.data,
+    #                     <float*> packed_params.data,
+    #                     <float*> output.data,
+    #                      k, n, 1,
+    #                      len(packed_params),
+    #                      packed_data.shape[1])
+    gps.mvnpdf2(<float*> packed_data.data,
+                 <float*> packed_params.data,
+                 <float*> output.data,
+                 k, n,
+                 len(packed_params),
+                 packed_data.shape[1])
+
+    return output
+
 def cpu_mvnpdf(ndarray data, ndarray mean, ndarray chol_sigma, logdet):
     cdef ndarray output, packed_params, packed_data
     n, k = (<object> data).shape

@@ -5,6 +5,7 @@ import numpy.linalg as L
 import scipy.special as sp
 import pymc.flib as flib
 import time
+import testmod
 
 # def test(k=4, n=100):
 def gen_testdata():
@@ -67,12 +68,14 @@ if __name__ == '__main__':
 
     data, mean, cov = load_testdata()
 
-    n = 1e6
+    n = 5e6
     k = 8
 
     data = randn(n, k)
     mean = randn(k)
     cov = random_cov(k) # np.cov(data.T)
+
+    packed_data = testmod.pack_data(data)
 
     chol_sigma = chol(cov)
     ichol_sigma = L.inv(chol_sigma)
@@ -81,7 +84,6 @@ if __name__ == '__main__':
 
     print flib.chol_mvnorm(data[0], mean, chol_sigma)
 
-    import testmod
     print testmod.cpu_mvnpdf(data, mean, ichol_sigma, logdet)
     print testmod.mvnpdf(data, mean, ichol_sigma, logdet)
 
@@ -89,20 +91,17 @@ if __name__ == '__main__':
 
     _s = time.clock()
     for i in xrange(gruns):
-        testmod.mvnpdf(data, mean, ichol_sigma, logdet)
+        testmod.mvnpdf(packed_data, mean, ichol_sigma, logdet)
 
     gpu_speed = (time.clock() - _s) / gruns
 
     cruns = 5
     _s = time.clock()
     for i in xrange(cruns):
-        testmod.cpu_mvnpdf(data, mean, ichol_sigma, logdet)
+        testmod.cpu_mvnpdf(packed_data, mean, ichol_sigma, logdet)
 
     cpu_speed = (time.clock() - _s) / cruns
 
     print 'CPU speed: %.3f' % (cpu_speed * 1000)
     print 'GPU speed: %.3f' % (gpu_speed * 1000)
-
-
-
-
+    print cpu_speed / gpu_speed
