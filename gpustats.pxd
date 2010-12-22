@@ -3,6 +3,15 @@ cdef extern from "cuda.h":
         pass
     char* cudaGetErrorString(cudaError_t err)
 
+cdef extern from "common.h":
+    struct PMatrix:
+        float* data
+        int rows
+        int cols
+        int stride
+
+    void PMatrix_init(float* d, int r, int c, int s)
+
 cdef extern from "mvnpdf.h":
     cudaError_t gpuMvNormalPDF(
         float* iData,
@@ -20,6 +29,7 @@ cdef extern from "mvnpdf.h":
                  float* h_pdf,
                  int data_dim,
                  int total_obs,
+                 int nparams,
                  int param_stride,
                  int data_stride)
 

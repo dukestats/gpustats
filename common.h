@@ -116,5 +116,4 @@ void doRestore(int instance);
 
 void handleStoreRestoreQueue(int instance);
 
-
 #endif // __GPUSTATS_COMMON__

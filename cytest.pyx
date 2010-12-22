@@ -59,6 +59,77 @@ def pack_data(data):
     else:
         return prep_ndarray(data)
 
+def mvnpdf(ndarray data, ndarray mean, ndarray chol_sigma, logdet):
+    cdef ndarray output, packed_params, packed_data
+    n, k = (<object> data).shape
+
+    packed_params = pack_pdf_params(mean, chol_sigma, logdet)
+    packed_data = pack_data(data)
+
+    output = np.empty(len(data), np.float32)
+    # gps.gpuMvNormalPDF(<float*> packed_data.data,
+    #                     <float*> packed_params.data,
+    #                     <float*> output.data,
+    #                      k, n, 1,
+    #                      len(packed_params),
+    #                      packed_data.shape[1])
+    gps.mvnpdf2(<float*> packed_data.data,
+                 <float*> packed_params.data,
+                 <float*> output.data,
+                 k, n, 1,
+                 len(packed_params),
+                 packed_data.shape[1])
+
+    return output
+
+def mvnpdf(ndarray data, means, chol_sigmas, logdets):
+    cdef ndarray output, packed_params, packed_data
+    cdef gps.cudaError_t res
+    n, k = (<object> data).shape
+    j = len(means)
+
+    packed_params = pack_params(means, chol_sigmas, logdets)
+    packed_data = pack_data(data)
+
+    output = np.empty((n, j), np.float32)
+
+    gps.mvnpdf2(<float*> packed_data.data,
+                 <float*> packed_params.data,
+                 <float*> output.data,
+                 k, n, j,
+                 packed_params.shape[1],
+                 packed_data.shape[1])
+
+    return output
+
+def mvnpdf2(ndarray data, means, chol_sigmas, logdets):
+    cdef ndarray output, packed_params, packed_data
+    cdef gps.cudaError_t res
+    n, k = (<object> data).shape
+
+    packed_params = pack_params(means, chol_sigmas, logdets)
+    packed_data = pack_data(data)
+
+    j = len(means)
+    output = np.empty((n, j), dtype=np.float32)
+
+    gps.gpuMvNormalPDF(<float*> packed_data.data,
+                        <float*> packed_params.data,
+                        <float*> output.data,
+                        k, n, j,
+                        packed_params.shape[1],
+                        packed_data.shape[1])
+
+    return output
+
+
+def pack_params(means, chol_sigmas, logdets):
+    to_pack = []
+    for m, ch, ld in zip(means, chol_sigmas, logdets):
+        to_pack.append(pack_pdf_params(m, ch, ld))
+
+    return np.vstack(to_pack)
+
 def pack_pdf_params(ndarray mean, ndarray chol_sigma, logdet):
     '''
 
@@ -82,66 +153,19 @@ def pack_pdf_params(ndarray mean, ndarray chol_sigma, logdet):
 
     return packed_params
 
-def mvnpdf(ndarray data, ndarray mean, ndarray chol_sigma, logdet):
-    cdef ndarray output, packed_params, packed_data
-    cdef gps.cudaError_t res
-    n, k = (<object> data).shape
-
-    packed_params = pack_pdf_params(mean, chol_sigma, logdet)
-    packed_data = pack_data(data)
-
-    output = np.empty(len(data), np.float32)
-    # gps.gpuMvNormalPDF(<float*> packed_data.data,
-    #                     <float*> packed_params.data,
-    #                     <float*> output.data,
-    #                      k, n, 1,
-    #                      len(packed_params),
-    #                      packed_data.shape[1])
-    gps.mvnpdf2(<float*> packed_data.data,
-                 <float*> packed_params.data,
-                 <float*> output.data,
-                 k, n,
-                 len(packed_params),
-                 packed_data.shape[1])
-
-    return output
-
-def mvnpdf(ndarray data, ndarray mean, ndarray chol_sigma, logdet):
-    cdef ndarray output, packed_params, packed_data
-    cdef gps.cudaError_t res
-    n, k = (<object> data).shape
-
-    packed_params = pack_pdf_params(mean, chol_sigma, logdet)
-    packed_data = pack_data(data)
-
-    output = np.empty(len(data), np.float32)
-    # gps.gpuMvNormalPDF(<float*> packed_data.data,
-    #                     <float*> packed_params.data,
-    #                     <float*> output.data,
-    #                      k, n, 1,
-    #                      len(packed_params),
-    #                      packed_data.shape[1])
-    gps.mvnpdf2(<float*> packed_data.data,
-                 <float*> packed_params.data,
-                 <float*> output.data,
-                 k, n,
-                 len(packed_params),
-                 packed_data.shape[1])
-
-    return output
-
-def cpu_mvnpdf(ndarray data, ndarray mean, ndarray chol_sigma, logdet):
+def cpu_mvnpdf(ndarray data, means, chol_sigmas, logdets):
     cdef ndarray output, packed_params, packed_data
     n, k = (<object> data).shape
 
-    packed_params = pack_pdf_params(mean, chol_sigma, logdet)
     packed_data = pack_data(data)
+    packed_params = pack_params(means, chol_sigmas, logdets)
+    j = len(means)
 
-    output = np.empty(len(data), dtype=np.float32)
+    output = np.empty((n, j), dtype=np.float32)
 
     gps.cpu_mvnormpdf(<float*> packed_data.data,
                        <float*> packed_params.data,
                        <float*> output.data,
-                       k, n, 1)
+                       k, n, j)
 
     return output

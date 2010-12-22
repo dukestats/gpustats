@@ -27,6 +27,13 @@ int smem_size() {
   return deviceProp.sharedMemPerBlock;
 }
 
+int max_block_threads() {
+  int dev = 0;
+  cudaDeviceProp deviceProp;
+  cudaGetDeviceProperties(&deviceProp, dev);
+  return deviceProp.maxThreadsPerBlock;
+}
+
 __device__ int next_multiple(int k, int mult) {
   if (k % mult)
 	return k + (mult - k % mult);
@@ -160,26 +167,9 @@ __device__ float compute_pdf(float* data, float* params, int iD) {
    	}
    	discrim += sum * sum;
   }
-
   return log(mult) - 0.5 * (discrim + logdet + LOG_2_PI * (float) iD);
 }
 
-
-// Simple strided matrix data structure, far as I can tell there's little or no
-// overhead in the compiled version.
-typedef struct {
-  float* buf; // C-style row-major data
-  int rows; // actual number of rows
-  int cols; // actual number of columns
-  int stride; // data length of row
-} PMatrix;
-
-void PMatrix_init(PMatrix* mat, float* data, int rows, int cols, int stride){
-  mat->buf = data;
-  mat->rows = rows;
-  mat->cols = cols;
-  mat->stride = stride;
-}
 
 __global__ void mvnpdf_k_old(PMatrix data, PMatrix params, float* output) {
   const int block_size = blockDim.x * blockDim.y;
@@ -250,7 +240,7 @@ __global__ void mvnpdf_k(PMatrix data, PMatrix params, float* output) {
 
   __syncthreads();
 
-  float density = compute_pdf(sh_data + tid * data.cols,
+  float density = compute_pdf(sh_data + tid * data.stride,
 							  sh_params, data.cols);
 
   if (obs_num < data.rows) {
@@ -261,11 +251,43 @@ __global__ void mvnpdf_k(PMatrix data, PMatrix params, float* output) {
 cudaError_t invoke_mvnpdf2(PMatrix data, PMatrix params, float* d_pdf) {
 
   int block_size = 256;
+
   dim3 gridPDF((data.rows + block_size - 1) / block_size, 1);
+
   dim3 blockPDF(block_size, 1);
   int sharedMemSize = SIZE_REAL * (params.stride + data.stride * block_size);
+
   printf("sharedMemSize: %d\n", sharedMemSize);
   printf("max shared: %d\n", smem_size());
+
+  mvnpdf_k<<<gridPDF,blockPDF,sharedMemSize>>>(data, params, d_pdf);
+
+  return cudaSuccess;
+}
+
+cudaError_t invoke_mvnpdf3(PMatrix data, PMatrix params, float* d_pdf) {
+  // Need to automatically tune block / grid layout to maximize shared memory
+  // usage and coalescence, reduce wasted threads!
+  TuningInfo tune_info;
+  get_tuned_layout(&tune_info, &data, &params);
+
+  // Now set up grid layout / block size
+  dim3 gridPDF(get_boxes(data.rows, tune_info.data_per_block),
+			   get_boxes(params.rows, tune_info.params_per_block));
+
+  dim3 blockPDF(tune_info.data_per_block,
+				tune_info.params_per_block);
+
+  int sharedMemSize = compute_shmem(&data, &params,
+									tune_info.params_per_block,
+									tune_info.data_per_block);
+
+  printf("number params: %d, number data points: %d\n",
+		 tune_info.params_per_block, tune_info.data_per_block);
+  printf("sharedMemSize: %d\n", sharedMemSize);
+  printf("block: %d x %d, grid: %d x %d\n", blockPDF.x, blockPDF.y,
+		 gridPDF.x, gridPDF.y);
+
   mvnpdf_k<<<gridPDF,blockPDF,sharedMemSize>>>(data, params, d_pdf);
   return cudaSuccess;
 }
@@ -275,6 +297,7 @@ void mvnpdf2(float* h_data, /** Data-vector; padded */
 			 float* h_pdf, /** Resultant PDF */
 			 int data_dim,
 			 int total_obs,
+			 int nparams, // multiple sets of parameters
 			 int param_stride, // with padding
 			 int data_stride // with padding
   ) {
@@ -294,16 +317,77 @@ void mvnpdf2(float* h_data, /** Data-vector; padded */
   h_to_d(h_params, d_params, param_stride);
 
   PMatrix_init(&pdata, d_data, total_obs, data_dim, data_stride);
-  PMatrix_init(&pparams, d_params, 1, data_dim * (data_dim + 3) / 2 + 2,
-  			   param_stride);
+  PMatrix_init(&pparams, d_params, nparams,
+			   data_dim * (data_dim + 3) / 2 + 2, param_stride);
 
-  invoke_mvnpdf2(pdata, pparams, d_pdf);
+  invoke_mvnpdf3(pdata, pparams, d_pdf);
 
   d_to_h(d_pdf, h_pdf, total_obs);
 
   cudaFree(d_data);
   cudaFree(d_params);
   cudaFree(d_pdf);
+}
+
+
+typedef struct {
+  int data_per_block;
+  int params_per_block;
+} TuningInfo;
+
+void get_tuned_layout(TuningInfo* info, PMatrix* data, PMatrix* params) {
+  // query the device for smem / max # of threads
+  int max_smem = smem_size();
+  int max_threads = max_block_threads();
+
+  // at most max_block_params sets of density parameters per block
+  // for low-dimensional data, better to do more?
+  int max_block_params = 16;
+  int params_per = max_block_params;
+  if (params->rows < max_block_params)
+	params_per = next_pow2(params->rows, max_block_params);
+
+  // hide your kids, hide your wife (auto-tuning the GPU)
+  int data_per;
+  while (1) {
+	data_per = max_threads / params_per;
+	  while (compute_shmem(data, params, params_per, data_per) > max_smem) {
+		if (data_per == 0)
+		  break;
+		data_per /=2;
+	  }
+
+	  // can't fit max_block_params sets of parameters into the shared memory,
+	  // uh oh
+	  if (data_per == 0) {
+		params_per /= 2;
+
+		// start over the tuning
+		continue;
+	  }
+	  else break;
+  }
+
+  info->data_per_block = data_per;
+  info->params_per_block = params_per;
+}
+
+int compute_shmem(PMatrix* data, PMatrix* params, int nparams, int ndata) {
+  int result_space = nparams * ndata;
+  int param_space = params->stride * nparams;
+  int data_space = data->stride * ndata;
+
+  return sizeof(float) * (result_space + param_space + data_space);
+}
+
+int next_pow2(int k, int pow2) {
+  // next highest power of two
+  while (k <= pow2 / 2) pow2 /= 2;
+  return pow2;
+}
+
+int get_boxes(int n, int box_size) {
+  return (n + box_size - 1) / box_size;
 }
 
 cudaError_t gpuMvNormalPDF(
@@ -373,7 +457,6 @@ void cpu_mvnormpdf(float* x, float* density, float * output, int D, int N, int T
             float discrim;
             float* tData = x + obs * DATA_PADDED_DIM;
             float* tDensityInfo = density + component * PACK_DIM;
-
             float* tMean = tDensityInfo;			//do we need to unallocate shared/register variables?
             float* tSigma = tDensityInfo + D;
             float  tP = tDensityInfo[LOGDET_OFFSET];
