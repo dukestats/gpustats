@@ -34,7 +34,7 @@ int compute_shmem(PMatrix* data, PMatrix* params, int nparams, int ndata) {
   // to hold specified about of data, parameters, and results
   int result_space = nparams * ndata;
   int param_space = params->stride * nparams;
-  int data_space = data->stride * ndata;
+  int data_space = data->cols * ndata;
 
   return sizeof(float) * (result_space + param_space + data_space);
 }
@@ -233,97 +233,74 @@ __device__ float compute_pdf(float* data, float* params, int iD) {
   return log(mult) - 0.5 * (discrim + logdet + LOG_2_PI * (float) iD);
 }
 
-__global__ void mvnpdf_k(PMatrix data, PMatrix params, float* output) {
-  unsigned int num_threads = blockDim.x * blockDim.y;
-  unsigned int block_start = blockIdx.x * num_threads;
-
-  // threads in row-major order, better perf
-  unsigned int tid = threadIdx.y * blockDim.x + threadIdx.x;
-  unsigned int obs_num = block_start + tid;
-
-  extern __shared__ float sData[];
-
-  float* sh_params = sData;
-  float* sh_data = sData + params.stride;
-
-  float* block_data = data.buf + block_start * data.stride;
-
-  // coalesce data into shared memory in chunks
-  unsigned int idx;
-  for (int chunk = 0; chunk < data.stride; ++chunk)
-  {
-	idx = chunk * num_threads + tid;
-	sh_data[idx] = block_data[idx];
-  }
-  __syncthreads();
-
-  // read mean, cov, scalar, logdet into shared memory
-  for (int chunk = 0; chunk < params.stride; chunk += num_threads)
-  {
-	if (chunk + tid < params.stride)
-	  sh_params[chunk + tid] = params.buf[chunk + tid];
-  }
-
-  __syncthreads();
-
-  float density = compute_pdf(sh_data + tid * data.stride,
-							  sh_params, data.cols);
-
-  if (obs_num < data.rows) {
-	output[obs_num] = density;
-  }
-}
-
-__global__ void mvnpdf_k2(const PMatrix data, const PMatrix params, float* output) {
+__global__ void mvnpdf_k(const PMatrix data, const PMatrix params, float* output) {
 
   // coalesce data into shared memory in chunks
   const int num_threads = blockDim.x * blockDim.y;
 
   // threads in row-major order, better perf
-  int tid = threadIdx.y * blockDim.x + threadIdx.x;
+  int thidx = threadIdx.x;
+  int thidy = threadIdx.y;
+
+  int tid = thidy * blockDim.x + thidx;
 
   // now compute your own pdf
   // need to coalesce back into global memory?
-  int obs_num = blockDim.x * blockIdx.x + threadIdx.x;
-  int param_index = blockIdx.y * blockDim.y + threadIdx.y;
-  int result_idx = params.rows * obs_num + param_index;
+  int obs_num = blockDim.x * blockIdx.x + thidx;
+  int param_index = blockIdx.y * blockDim.y + thidy;
 
   // set up shared data
   extern __shared__ float sData[];
 
   float* sh_params = sData; // store parameters
   float* sh_data = sh_params + blockDim.y * params.stride; // store data
-  float* sh_result = sh_data + blockDim.x * data.stride; // store pdfs
+  float* sh_result = sh_data + blockDim.x * data.cols; // store pdfs
 
-  int idx;
-  const int data_start = blockDim.x * blockIdx.x * data.stride;
-  const int data_total = data.rows * data.stride;
-  for (int chunk = data_start;
-	   chunk < data_start + blockDim.x * data.stride;
-	   chunk += num_threads)
+  for (int chunk = 0; chunk < data.cols; chunk += blockDim.y)
   {
-	idx = chunk + tid;
-	if (idx < data_total)
-	  sh_data[idx - data_start] = data.buf[idx];
+    if (chunk + thidy < data.cols) {
+  	  sh_data[thidx * data.cols + chunk + thidy] = \
+  		data.buf[data.stride * obs_num + chunk + thidy];
+  	}
   }
 
-  const int params_start = blockDim.y * blockIdx.y * params.stride;
-  const int params_total = params.rows * params.stride;
-  for (int chunk = params_start;
-	   chunk < params_start + blockDim.y * params.stride;
-	   chunk += num_threads)
+  for (int chunk = 0; chunk < params.stride; chunk += blockDim.x)
   {
-	idx = chunk + tid;
-	if (idx < params_total)
-	  sh_params[idx - params_start] = params.buf[idx];
+    if (chunk + thidx < params.stride)
+	  sh_params[thidy * params.stride + chunk + thidx] = \
+		params.buf[params.stride * param_index + chunk + thidx];
   }
+
+  // int idx;
+  // const int data_start = blockDim.x * blockIdx.x * data.cols;
+  // const int data_total = data.rows * data.cols;
+
+  // for (int chunk = data_start;
+  // 	   chunk < data_start + blockDim.x * data.stride;
+  // 	   chunk += num_threads)
+  // {
+  // 	idx = chunk + tid;
+  // 	if (idx < data_total)
+  // 	  sh_data[idx - data_start] = data.buf[idx];
+  // }
+
+  // const int params_start = blockDim.y * blockIdx.y * params.stride;
+  // const int params_total = params.rows * params.stride;
+  // for (int chunk = params_start;
+  // 	   chunk < params_start + blockDim.y * params.stride;
+  // 	   chunk += num_threads)
+  // {
+  // 	idx = chunk + tid;
+  // 	if (idx < params_total)
+  // 	  sh_params[idx - params_start] = params.buf[idx];
+  // }
 
   __syncthreads();
 
-  int sh_idx = threadIdx.y * blockDim.x + threadIdx.x;
+  int sh_idx = thidy * blockDim.x + thidx;
   if (obs_num < data.rows & param_index < params.rows) {
-	float d = compute_pdf(sh_data + threadIdx.x * data.stride,
-						  sh_params + threadIdx.y * params.stride,
+	float d = compute_pdf(sh_data + thidx * data.cols,
+						  sh_params + thidy * params.stride,
 						  data.cols);
 	sh_result[sh_idx] = d;
   }
@@ -334,35 +311,20 @@ __global__ void mvnpdf_k2(const PMatrix data, const PMatrix params, float* outpu
   // const int result_idx = param_index * data.rows + obs_num;
 
   // // thread number in column-major order
-  // tid = threadIdx.x * blockDim.y + threadIdx.y;
+  // tid = thidx * blockDim.y + thidy;
   // obs_num = blockDim.x * blockIdx.x + tid / blockDim.y;
   // param_index = blockIdx.y * blockDim.y + tid % blockDim.y;
   // const int result_idx = params.rows * obs_num + tid % blockDim.y;
 
+  int result_idx = params.rows * obs_num + param_index;
   if (obs_num < data.rows & param_index < params.rows) {
 	// sh_idx = tid;
+	// output[result_idx] = data.cols;
 	output[result_idx] = sh_result[sh_idx];
   }
 }
 
-cudaError_t invoke_mvnpdf2(PMatrix data, PMatrix params, float* d_pdf) {
-
-  int block_size = 256;
-
-  dim3 gridPDF((data.rows + block_size - 1) / block_size, 1);
-
-  dim3 blockPDF(block_size, 1);
-  int sharedMemSize = SIZE_REAL * (params.stride + data.stride * block_size);
-
-  printf("sharedMemSize: %d\n", sharedMemSize);
-  printf("max shared: %d\n", smem_size());
-
-  mvnpdf_k<<<gridPDF,blockPDF,sharedMemSize>>>(data, params, d_pdf);
-
-  return cudaSuccess;
-}
-
-cudaError_t invoke_mvnpdf3(PMatrix data, PMatrix params, float* d_pdf) {
+cudaError_t invoke_mvnpdf(PMatrix data, PMatrix params, float* d_pdf) {
   // Need to automatically tune block / grid layout to maximize shared memory
   // usage and coalescence, reduce wasted threads!
   TuningInfo tune_info;
@@ -386,7 +348,7 @@ cudaError_t invoke_mvnpdf3(PMatrix data, PMatrix params, float* d_pdf) {
 		 gridPDF.x, gridPDF.y);
   printf("nparams: %d\n", params.rows);
 
-  mvnpdf_k2<<<gridPDF,blockPDF,sharedMemSize>>>(data, params, d_pdf);
+  mvnpdf_k<<<gridPDF,blockPDF,sharedMemSize>>>(data, params, d_pdf);
   return cudaSuccess;
 }
 
@@ -419,7 +381,10 @@ void mvnpdf2(float* h_data, /** Data-vector; padded */
   PMatrix_init(&pparams, d_params, nparams,
 			   data_dim * (data_dim + 3) / 2 + 2, param_stride);
 
-  invoke_mvnpdf3(pdata, pparams, d_pdf);
+  printf("data dim: %d\n", pdata.cols);
+  printf("data padded dim: %d\n", pdata.stride);
+
+  invoke_mvnpdf(pdata, pparams, d_pdf);
   d_to_h(d_pdf, h_pdf, total_obs * nparams);
 
   cudaFree(d_data);

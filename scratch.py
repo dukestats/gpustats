@@ -68,16 +68,16 @@ if __name__ == '__main__':
 
     data, mean, cov = load_testdata()
 
-    j = 1
+    j = 32
 
-    n = 1e6
-    k = 8
+    n = 1e5
+    k = 14
 
     data = randn(n, k)
     mean = randn(k)
     cov = random_cov(k) # np.cov(data.T)
 
-    j = 64
+    j = 128
 
     packed_data = testmod.pack_data(data)
 
@@ -105,6 +105,7 @@ if __name__ == '__main__':
     # print diff[diff.sum(1) != 0], np.arange(len(diff))[diff.sum(1) != 0]
 
     print r2[0][:32]
+    print packed_data[0]
 
     gruns = 1
 
