@@ -68,14 +68,16 @@ if __name__ == '__main__':
 
     data, mean, cov = load_testdata()
 
-    n = 513
+    j = 1
+
+    n = 1e6
     k = 8
 
     data = randn(n, k)
     mean = randn(k)
     cov = random_cov(k) # np.cov(data.T)
 
-    j = 9
+    j = 64
 
     packed_data = testmod.pack_data(data)
 
@@ -90,32 +92,35 @@ if __name__ == '__main__':
 
     print flib.chol_mvnorm(data[0], mean, chol_sigma)
 
-    r1 = testmod.cpu_mvnpdf(data, means, covs, logdets).squeeze()
-    r2 = testmod.mvnpdf(data, means, covs, logdets).squeeze()
+    packed_params = testmod.pack_params(means, covs, logdets)
+
+    r1 = testmod.cpu_mvnpdf(packed_data, packed_params, k).squeeze()
+    r2 = testmod.mvnpdf3(packed_data, packed_params, k).squeeze()
 
     print r1
     print r2
     diff = np.where(np.abs(r1 - r2) < 1e-4, 0, r1 - r2)
-    print diff[diff.sum(0) != 0], np.arange(len(diff))[diff.sum(0) != 0]
+    print diff.sum() / np.prod(diff.shape)
 
-    # print testmod.cpu_mvnpdf(data, mean, ichol_sigma, logdet)
-    # print testmod.mvnpdf(data, mean, ichol_sigma, logdet)
+    # print diff[diff.sum(1) != 0], np.arange(len(diff))[diff.sum(1) != 0]
 
-    # gruns = 10
+    print r2[0][:32]
 
-    # _s = time.clock()
-    # for i in xrange(gruns):
-    #     testmod.mvnpdf(packed_data, means, covs, logdets)
+    gruns = 1
 
-    # gpu_speed = (time.clock() - _s) / gruns
+    _s = time.clock()
+    for i in xrange(gruns):
+        testmod.mvnpdf3(packed_data, packed_params, k).squeeze()
 
-    # cruns = 5
-    # _s = time.clock()
-    # for i in xrange(cruns):
-    #     testmod.cpu_mvnpdf(packed_data, means, covs, logdets)
+    gpu_speed = (time.clock() - _s) / gruns
 
-    # cpu_speed = (time.clock() - _s) / cruns
+    cruns = 1
+    _s = time.clock()
+    for i in xrange(cruns):
+        testmod.cpu_mvnpdf(packed_data, packed_params, k).squeeze()
 
-    # print 'CPU speed: %.3f' % (cpu_speed * 1000)
-    # print 'GPU speed: %.3f' % (gpu_speed * 1000)
-    # print cpu_speed / gpu_speed
+    cpu_speed = (time.clock() - _s) / cruns
+
+    print 'CPU speed: %.3f' % (cpu_speed * 1000)
+    print 'GPU speed: %.3f' % (gpu_speed * 1000)
+    print cpu_speed / gpu_speed
