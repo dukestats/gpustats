@@ -57,27 +57,27 @@ void get_tuned_layout(TuningInfo* info, PMatrix* data, PMatrix* params) {
   int max_block_params = 16;
   int params_per = max_block_params;
   if (params->rows < max_block_params)
-	params_per = next_pow2(params->rows, max_block_params);
+    params_per = next_pow2(params->rows, max_block_params);
 
   // hide your kids, hide your wife (auto-tuning the GPU)
   int data_per;
   while (1) {
-	data_per = max_threads / params_per;
-	  while (compute_shmem(data, params, params_per, data_per) > max_smem) {
-		if (data_per == 0)
-		  break;
-		data_per /=2;
-	  }
+    data_per = max_threads / params_per;
+      while (compute_shmem(data, params, params_per, data_per) > max_smem) {
+        if (data_per == 0)
+          break;
+        data_per /=2;
+      }
 
-	  // can't fit max_block_params sets of parameters into the shared memory,
-	  // uh oh
-	  if (data_per == 0) {
-		params_per /= 2;
+      // can't fit max_block_params sets of parameters into the shared memory,
+      // uh oh
+      if (data_per == 0) {
+        params_per /= 2;
 
-		// start over the tuning
-		continue;
-	  }
-	  else break;
+        // start over the tuning
+        continue;
+      }
+      else break;
   }
 
   info->data_per_block = data_per;
@@ -96,117 +96,9 @@ void inline d_to_h(float* d_ptr, float* h_ptr, size_t n){
 
 __device__ int next_multiple(int k, int mult) {
   if (k % mult)
-	return k + (mult - k % mult);
+    return k + (mult - k % mult);
   else
-	return k;
-}
-
-/* Thread-Block design:
- * 1 thread per datum*density
- * Block grid(DATA_IN_BLOCK,DENSITIES_IN_BLOCK)
- * DATA_IN_BLOCK = # of datum per block
- * DENSITIES_IN_BLOCK = # of densities per block
- */
-#define TWISTED_DENSITY
-__global__ void mvNormalPDF(
-                    REAL* inData, /** Data-vector; padded */
-                    REAL* inDensityInfo, /** Density info; already padded */
-                    REAL* outPDF, /** Resultant PDF */
-                    int iD,
-                    int iN,
-                    int iTJ,
-                    int isLogScaled
-                ) {
-    const int thidx = threadIdx.x;
-    const int thidy = threadIdx.y;
-
-    const int dataBlockIndex = blockIdx.x * DATA_IN_BLOCK;
-    const int datumIndex = dataBlockIndex + thidx;
-
-    const int densityBlockIndex = blockIdx.y * DENSITIES_IN_BLOCK;
-    const int densityIndex = densityBlockIndex + thidy;
-
-    #if defined(TWISTED_DENSITY)
-        const int pdfIndex = blockIdx.x * DATA_IN_BLOCK * iTJ +
-            blockIdx.y * DENSITIES_IN_BLOCK + thidy * iTJ + thidx;
-    #else
-        const int pdfIndex = datumIndex * iTJ + densityIndex;
-    #endif
-
-    extern __shared__ REAL sData[];
-    REAL *densityInfo = sData;
-    // do this for now, will be more efficient to pass them in as parameters?
-    //-------------------------------------------------------
-    int LOGDET_OFFSET = iD * (iD + 3) / 2;
-    int MEAN_CHD_DIM = iD * (iD + 3) / 2    + 2;
-    int PACK_DIM = 16;
-    while (MEAN_CHD_DIM > PACK_DIM) {PACK_DIM += 16;}
-    int DATA_PADDED_DIM = BASE_DATAPADED_DIM;
-    while (iD > DATA_PADDED_DIM) {DATA_PADDED_DIM += BASE_DATAPADED_DIM;}
-    //--------------------------------------------------
-
-    const int data_offset = DENSITIES_IN_BLOCK * PACK_DIM;
-    REAL *data = &sData[data_offset];
-
-    #if defined(TWISTED_DENSITY)
-        REAL *result_trans = &sData[data_offset+DATA_IN_BLOCK * iD];
-    #endif
-
-    //Read in data
-    for(int chunk = 0; chunk < iD; chunk += DENSITIES_IN_BLOCK)
-    if (chunk + thidy < iD ) {
-        data[thidx * iD + chunk + thidy] = inData[DATA_PADDED_DIM*datumIndex + chunk + thidy];
-    }
-
-
-    // Read in density info by chunks
-    for(int chunk = 0; chunk < PACK_DIM; chunk += DATA_IN_BLOCK) {
-        if (chunk + thidx < PACK_DIM) {
-            densityInfo[thidy * PACK_DIM + chunk + thidx] = inDensityInfo[PACK_DIM*densityIndex + chunk + thidx];
-        }
-    }
-    __syncthreads();
-
-    // Setup pointers
-    REAL* tData = data+thidx*iD;
-    REAL* tDensityInfo = densityInfo + thidy * PACK_DIM;
-
-
-    REAL* tMean = tDensityInfo;         //do we need to unallocate shared/register variables?
-    REAL* tSigma = tDensityInfo + iD;
-    REAL  tP = tDensityInfo[LOGDET_OFFSET];
-    REAL  tLogDet = tDensityInfo[LOGDET_OFFSET+1];
-
-    // Do density calculation
-    REAL discrim = 0;
-    for(int i=0; i<iD; i++) {
-        REAL sum = 0;
-        for(int j=0; j<=i; j++) {
-            sum += *tSigma++ * (tData[j] - tMean[j]); // xx[j] is always calculated since j <= i
-        }
-        discrim += sum * sum;
-    }
-    REAL d;
-	REAL mydim = (REAL)iD;
-    if (isLogScaled>0) {
-	  d = log(tP)-0.5 * (discrim + tLogDet + (LOG_2_PI * mydim));
-    } else {
-	  d = tP * exp(-0.5 * (discrim + tLogDet + (LOG_2_PI*mydim)));
-    }
-    #if defined(TWISTED_DENSITY)
-        result_trans[thidx * DATA_IN_BLOCK + thidy] = d;
-        __syncthreads();
-    #endif
-
-
-    if (datumIndex < iN & densityIndex < iTJ) {
-        #if defined(TWISTED_DENSITY)
-            outPDF[pdfIndex] = result_trans[thidx + thidy * DENSITIES_IN_BLOCK];
-        #else
-
-            outPDF[pdfIndex] = d;
-        #endif
-    }
+    return k;
 }
 
 __device__ float compute_pdf(float* data, float* params, int iD) {
@@ -221,11 +113,11 @@ __device__ float compute_pdf(float* data, float* params, int iD) {
 
   for (int i = 0; i < iD; ++i)
   {
-   	sum = 0;
-   	for(int j=0; j <= i; j++) {
-   	  sum += *sigma++ * (data[j] - mean[j]);
-   	}
-   	discrim += sum * sum;
+    sum = 0;
+    for(int j=0; j <= i; j++) {
+      sum += *sigma++ * (data[j] - mean[j]);
+    }
+    discrim += sum * sum;
   }
   return log(mult) - 0.5 * (discrim + logdet + LOG_2_PI * (float) iD);
 }
@@ -256,16 +148,16 @@ __global__ void mvnpdf_k(const PMatrix data, const PMatrix params, float* output
   for (int chunk = 0; chunk < data.cols; chunk += blockDim.y)
   {
     if (chunk + thidy < data.cols) {
-  	  sh_data[thidx * data.cols + chunk + thidy] = \
-  		data.buf[data.stride * obs_num + chunk + thidy];
-  	}
+      sh_data[thidx * data.cols + chunk + thidy] = \
+        data.buf[data.stride * obs_num + chunk + thidy];
+    }
   }
 
   for (int chunk = 0; chunk < params.stride; chunk += blockDim.x)
   {
     if (chunk + thidx < params.stride)
-	  sh_params[thidy * params.stride + chunk + thidx] = \
-		params.buf[params.stride * param_index + chunk + thidx];
+      sh_params[thidy * params.stride + chunk + thidx] = \
+        params.buf[params.stride * param_index + chunk + thidx];
   }
 
   // int idx;
@@ -273,39 +165,39 @@ __global__ void mvnpdf_k(const PMatrix data, const PMatrix params, float* output
   // const int data_total = data.rows * data.cols;
 
   // for (int chunk = data_start;
-  // 	   chunk < data_start + blockDim.x * data.stride;
-  // 	   chunk += num_threads)
+  //       chunk < data_start + blockDim.x * data.stride;
+  //       chunk += num_threads)
   // {
-  // 	idx = chunk + tid;
-  // 	if (idx < data_total)
-  // 	  sh_data[idx - data_start] = data.buf[idx];
+  //    idx = chunk + tid;
+  //    if (idx < data_total)
+  //      sh_data[idx - data_start] = data.buf[idx];
   // }
 
   // const int params_start = blockDim.y * blockIdx.y * params.stride;
   // const int params_total = params.rows * params.stride;
   // for (int chunk = params_start;
-  // 	   chunk < params_start + blockDim.y * params.stride;
-  // 	   chunk += num_threads)
+  //       chunk < params_start + blockDim.y * params.stride;
+  //       chunk += num_threads)
   // {
-  // 	idx = chunk + tid;
-  // 	if (idx < params_total)
-  // 	  sh_params[idx - params_start] = params.buf[idx];
+  //    idx = chunk + tid;
+  //    if (idx < params_total)
+  //      sh_params[idx - params_start] = params.buf[idx];
   // }
 
   __syncthreads();
 
   int sh_idx = thidy * blockDim.x + thidx;
   if (obs_num < data.rows & param_index < params.rows) {
-  	float d = compute_pdf(sh_data + thidx * data.cols,
-  						  sh_params + thidy * params.stride,
-  						  data.cols);
-  	sh_result[sh_idx] = d;
+    float d = compute_pdf(sh_data + thidx * data.cols,
+                          sh_params + thidy * params.stride,
+                          data.cols);
+    sh_result[sh_idx] = d;
   }
   __syncthreads();
 
   int result_idx = params.rows * obs_num + param_index;
   if (obs_num < data.rows & param_index < params.rows) {
-  	output[result_idx] = sh_result[sh_idx];
+    output[result_idx] = sh_result[sh_idx];
   }
 
   // // write out in other order to coalesce
@@ -319,19 +211,19 @@ __global__ void mvnpdf_k(const PMatrix data, const PMatrix params, float* output
   // const int result_idx = params.rows * obs_num + tid % blockDim.y;
 
   // if (obs_num < data.rows & param_index < params.rows) {
-  // 	float d = compute_pdf(sh_data + thidx * data.cols,
-  // 						  sh_params + thidy * params.stride,
-  // 						  data.cols);
-  // 	sh_result[thidx * blockDim.x + thidy] = d;
+  //    float d = compute_pdf(sh_data + thidx * data.cols,
+  //                          sh_params + thidy * params.stride,
+  //                          data.cols);
+  //    sh_result[thidx * blockDim.x + thidy] = d;
   // }
   // __syncthreads();
 
   // // int result_idx = params.rows * obs_num + param_index;
   // int result_idx = (blockIdx.x * blockDim.x * params.rows
-  // 					+ blockIdx.y * blockDim.y + thidy * params.rows
-  // 					+ thidx);
+  //                    + blockIdx.y * blockDim.y + thidy * params.rows
+  //                    + thidx);
   // if (obs_num < data.rows & param_index < params.rows) {
-  // 	output[result_idx] = sh_result[thidx + thidy * blockDim.y];
+  //    output[result_idx] = sh_result[thidx + thidy * blockDim.y];
   // }
 }
 
@@ -347,17 +239,17 @@ cudaError_t invoke_mvnpdf(PMatrix data, PMatrix params, float* d_pdf) {
   dim3 gridPDF(grid_x, grid_y);
 
   dim3 blockPDF(tune_info.data_per_block,
-				tune_info.params_per_block);
+                tune_info.params_per_block);
 
   int sharedMemSize = compute_shmem(&data, &params,
-									tune_info.params_per_block,
-									tune_info.data_per_block);
+                                    tune_info.params_per_block,
+                                    tune_info.data_per_block);
 
   printf("number params: %d, number data points: %d\n",
-		 tune_info.params_per_block, tune_info.data_per_block);
+         tune_info.params_per_block, tune_info.data_per_block);
   printf("sharedMemSize: %d\n", sharedMemSize);
   printf("block: %d x %d, grid: %d x %d\n", blockPDF.x, blockPDF.y,
-		 gridPDF.x, gridPDF.y);
+         gridPDF.x, gridPDF.y);
   printf("nparams: %d\n", params.rows);
 
   mvnpdf_k<<<gridPDF,blockPDF,sharedMemSize>>>(data, params, d_pdf);
@@ -365,13 +257,13 @@ cudaError_t invoke_mvnpdf(PMatrix data, PMatrix params, float* d_pdf) {
 }
 
 void mvnpdf2(float* h_data, /** Data-vector; padded */
-			 float* h_params, /** Density info; already padded */
-			 float* h_pdf, /** Resultant PDF */
-			 int data_dim,
-			 int total_obs,
-			 int nparams, // multiple sets of parameters
-			 int param_stride, // with padding
-			 int data_stride // with padding
+             float* h_params, /** Density info; already padded */
+             float* h_pdf, /** Resultant PDF */
+             int data_dim,
+             int total_obs,
+             int nparams, // multiple sets of parameters
+             int param_stride, // with padding
+             int data_stride // with padding
   ) {
 
   float* d_data;
@@ -391,7 +283,7 @@ void mvnpdf2(float* h_data, /** Data-vector; padded */
 
   PMatrix_init(&pdata, d_data, total_obs, data_dim, data_stride);
   PMatrix_init(&pparams, d_params, nparams,
-			   data_dim * (data_dim + 3) / 2 + 2, param_stride);
+               data_dim * (data_dim + 3) / 2 + 2, param_stride);
 
   printf("data dim: %d\n", pdata.cols);
   printf("data padded dim: %d\n", pdata.stride);
@@ -404,65 +296,14 @@ void mvnpdf2(float* h_data, /** Data-vector; padded */
   cudaFree(d_pdf);
 }
 
-
-cudaError_t gpuMvNormalPDF(
-                    REAL* hData, /** Data-vector; padded */
-                    REAL* hParams, /** Density info; already padded */
-                    REAL* hPDF, /** Resultant PDF */
-                    int iD,
-                    int iN,
-                    int iTJ,
-					int PACK_DIM,
-					int DIM
-                    ) {
-
-  float* dData;
-  float* dParams;
-  float* dPDF;
-
-  cudaMalloc(&dData, DIM * iN * sizeof(float));
-  cudaMalloc(&dParams, PACK_DIM * sizeof(float));
-  cudaMalloc(&dPDF, iN * sizeof(float));
-
-  h_to_d(hData, dData, iN);
-  h_to_d(hParams, dParams, PACK_DIM);
-
-  dim3 gridPDF(iN/DATA_IN_BLOCK, iTJ/DENSITIES_IN_BLOCK);
-  if (iN % DATA_IN_BLOCK != 0)
-	gridPDF.x += 1;
-  if (iTJ % DENSITIES_IN_BLOCK != 0)
-	gridPDF.y += 1;
-
-  dim3 blockPDF(DATA_IN_BLOCK,DENSITIES_IN_BLOCK);
-#if defined(TWISTED_DENSITY)
-  int sharedMemSize = (DENSITIES_IN_BLOCK * PACK_DIM + DATA_IN_BLOCK * DIM \
-					   + DENSITIES_IN_BLOCK*DATA_IN_BLOCK) * SIZE_REAL;
-#else
-  int sharedMemSize = (DENSITIES_IN_BLOCK * PACK_DIM + DATA_IN_BLOCK * DIM) * SIZE_REAL;
-#endif
-#if defined(LOGPDF)
-  mvNormalPDF<<<gridPDF,blockPDF,sharedMemSize>>>(dData, dParams, dPDF,iD, iN, iTJ,1);
-#else
-  mvNormalPDF<<<gridPDF,blockPDF,sharedMemSize>>>(dData, dParams, dPDF, iD, iN, iTJ,0);
-#endif
-
-  d_to_h(dPDF, hPDF, iN);
-
-  cudaFree(dData);
-  cudaFree(dParams);
-  cudaFree(dPDF);
-
-    return cudaSuccess;
-}
-
 void cpu_mvnormpdf(float* x, float* density, float * output, int D, int N, int T) {
     int LOGDET_OFFSET = D * (D + 3) / 2;
-	int MEAN_CHD_DIM = D * (D + 3) / 2	+ 2;
-	int PACK_DIM = 16;
+    int MEAN_CHD_DIM = D * (D + 3) / 2  + 2;
+    int PACK_DIM = 16;
 
-	while (MEAN_CHD_DIM > PACK_DIM) {PACK_DIM += 16;}
-	int DATA_PADDED_DIM = 8;
-	while (D > DATA_PADDED_DIM) {DATA_PADDED_DIM += 8;}
+    while (MEAN_CHD_DIM > PACK_DIM) {PACK_DIM += 16;}
+    int DATA_PADDED_DIM = 8;
+    while (D > DATA_PADDED_DIM) {DATA_PADDED_DIM += 8;}
 
     float* xx = (float*) malloc(D * sizeof(float));
     int obs, component;
@@ -472,7 +313,7 @@ void cpu_mvnormpdf(float* x, float* density, float * output, int D, int N, int T
             float discrim;
             float* tData = x + obs * DATA_PADDED_DIM;
             float* tDensityInfo = density + component * PACK_DIM;
-            float* tMean = tDensityInfo;			//do we need to unallocate shared/register variables?
+            float* tMean = tDensityInfo;            //do we need to unallocate shared/register variables?
             float* tSigma = tDensityInfo + D;
             float  tP = tDensityInfo[LOGDET_OFFSET];
             float  tLogDet = tDensityInfo[LOGDET_OFFSET+1];
@@ -482,24 +323,24 @@ void cpu_mvnormpdf(float* x, float* density, float * output, int D, int N, int T
             for(int i=0; i<D; i++) {
                 float sum = 0;
                 for(int j=0; j<=i; j++) {
-				  // printf("%d %d %f %f %f\n", i, j, *tSigma, tData[j], tMean[j]);
-				  sum += *tSigma * (tData[j] - tMean[j]); // xx[j] is always calculated since j <= i
-				  tSigma++;
+                  // printf("%d %d %f %f %f\n", i, j, *tSigma, tData[j], tMean[j]);
+                  sum += *tSigma * (tData[j] - tMean[j]); // xx[j] is always calculated since j <= i
+                  tSigma++;
                 }
 
                 discrim += sum * sum;
             }
 
             float d = log(tP) - 0.5 * (discrim + tLogDet + (LOG_2_PI*(float) D));
-			// printf("discrim: %f\n", discrim);
-			// printf("tP: %f\n", tP);
-			// printf("tLogDet: %f\n", tLogDet);
-			// printf("d: %f\n", d);
-			// printf("idx: %d\n", obs * T + component);
+            // printf("discrim: %f\n", discrim);
+            // printf("tP: %f\n", tP);
+            // printf("tLogDet: %f\n", tLogDet);
+            // printf("d: %f\n", d);
+            // printf("idx: %d\n", obs * T + component);
             output[obs * T + component] = d;
         }
     }
-	free(xx);
+    free(xx);
 }
 
 
