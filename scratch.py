@@ -77,7 +77,7 @@ if __name__ == '__main__':
     mean = randn(k)
     cov = random_cov(k) # np.cov(data.T)
 
-    j = 128
+    j = 256
 
     packed_data = testmod.pack_data(data)
 

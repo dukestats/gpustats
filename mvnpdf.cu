@@ -7,9 +7,6 @@ extern "C" {
 
 #include "mvnpdf.h"
 
-#define BLOCK_SIZE 16
-#define BLOCK_TOTAL 256
-
 typedef struct {
   int data_per_block;
   int params_per_block;
@@ -299,12 +296,17 @@ __global__ void mvnpdf_k(const PMatrix data, const PMatrix params, float* output
 
   int sh_idx = thidy * blockDim.x + thidx;
   if (obs_num < data.rows & param_index < params.rows) {
-	float d = compute_pdf(sh_data + thidx * data.cols,
-						  sh_params + thidy * params.stride,
-						  data.cols);
-	sh_result[sh_idx] = d;
+  	float d = compute_pdf(sh_data + thidx * data.cols,
+  						  sh_params + thidy * params.stride,
+  						  data.cols);
+  	sh_result[sh_idx] = d;
   }
   __syncthreads();
+
+  int result_idx = params.rows * obs_num + param_index;
+  if (obs_num < data.rows & param_index < params.rows) {
+  	output[result_idx] = sh_result[sh_idx];
+  }
 
   // // write out in other order to coalesce
   // // transpose! to get it to coalesce
@@ -316,12 +318,21 @@ __global__ void mvnpdf_k(const PMatrix data, const PMatrix params, float* output
   // param_index = blockIdx.y * blockDim.y + tid % blockDim.y;
   // const int result_idx = params.rows * obs_num + tid % blockDim.y;
 
-  int result_idx = params.rows * obs_num + param_index;
-  if (obs_num < data.rows & param_index < params.rows) {
-	// sh_idx = tid;
-	// output[result_idx] = data.cols;
-	output[result_idx] = sh_result[sh_idx];
-  }
+  // if (obs_num < data.rows & param_index < params.rows) {
+  // 	float d = compute_pdf(sh_data + thidx * data.cols,
+  // 						  sh_params + thidy * params.stride,
+  // 						  data.cols);
+  // 	sh_result[thidx * blockDim.x + thidy] = d;
+  // }
+  // __syncthreads();
+
+  // // int result_idx = params.rows * obs_num + param_index;
+  // int result_idx = (blockIdx.x * blockDim.x * params.rows
+  // 					+ blockIdx.y * blockDim.y + thidy * params.rows
+  // 					+ thidx);
+  // if (obs_num < data.rows & param_index < params.rows) {
+  // 	output[result_idx] = sh_result[thidx + thidy * blockDim.y];
+  // }
 }
 
 cudaError_t invoke_mvnpdf(PMatrix data, PMatrix params, float* d_pdf) {
@@ -337,6 +348,7 @@ cudaError_t invoke_mvnpdf(PMatrix data, PMatrix params, float* d_pdf) {
 
   dim3 blockPDF(tune_info.data_per_block,
 				tune_info.params_per_block);
+
   int sharedMemSize = compute_shmem(&data, &params,
 									tune_info.params_per_block,
 									tune_info.data_per_block);
