@@ -54,37 +54,48 @@ void get_tuned_layout(TuningInfo* info, PMatrix* data, PMatrix* params) {
   info->params_per_block = params_per;
 }
 
-__device__ int next_multiple(int k, int mult) {
+__device__ int d_next_multiple(int k, int mult) {
   if (k % mult)
     return k + (mult - k % mult);
   else
     return k;
 }
 
-__device__ float compute_pdf(float* data, float* params, int iD) {
-  unsigned int LOGDET_OFFSET = iD * (iD + 3) / 2;
+int next_multiple(int k, int mult) {
+  if (k % mult)
+    return k + (mult - k % mult);
+  else
+    return k;
+}
+
+__device__ float compute_pdf(float* data, float* params, int dim) {
+  unsigned int LOGDET_OFFSET = dim * (dim + 3) / 2;
   float* mean = params;
-  float* sigma = params + iD;
+  float* sigma = params + dim;
   float mult = params[LOGDET_OFFSET];
   float logdet = params[LOGDET_OFFSET + 1];
 
   float discrim = 0;
   float sum;
 
-  for (int i = 0; i < iD; ++i)
+  int i, j;
+  for (i = 0; i < dim; ++i)
   {
     sum = 0;
-    for(int j=0; j <= i; j++) {
-      sum += *sigma++ * (data[j] - mean[j]);
+    for(j = 0; j <= i; ++j) {
+	  sum += *sigma++ * (data[j] - mean[j]);
     }
     discrim += sum * sum;
   }
-  return log(mult) - 0.5 * (discrim + logdet + LOG_2_PI * (float) iD);
+  return log(mult) - 0.5 * (discrim + logdet + LOG_2_PI * ((float) dim));
 }
 
 __device__ void copy_data(const PMatrix* data, float* sh_data,
 						  int thidx, int thidy, int obs_num)
 {
+  if (obs_num >= data->rows)
+	return;
+
   for (int chunk = 0; chunk < data->cols; chunk += blockDim.y)
   {
     if (chunk + thidy < data->cols) {
@@ -92,22 +103,27 @@ __device__ void copy_data(const PMatrix* data, float* sh_data,
         data->buf[data->stride * obs_num + chunk + thidy];
     }
   }
+  __syncthreads();
 }
 
 __device__ void copy_params(const PMatrix* params, float* sh_params,
 							int thidx, int thidy, int param_index)
 {
+  if (param_index >= params->rows)
+	return;
+
   for (int chunk = 0; chunk < params->stride; chunk += blockDim.x)
   {
     if (chunk + thidx < params->stride)
       sh_params[thidy * params->stride + chunk + thidx] = \
         params->buf[params->stride * param_index + chunk + thidx];
   }
+  __syncthreads();
 }
 
 __global__ void mvnpdf_k(const PMatrix data, const PMatrix params, float* output) {
 
-  // threads in row-major order, better perf
+  // threads in row-major order, better perf?
   int thidx = threadIdx.x;
   int thidy = threadIdx.y;
 
@@ -118,6 +134,7 @@ __global__ void mvnpdf_k(const PMatrix data, const PMatrix params, float* output
   // need to coalesce back into global memory?
   int obs_num = blockDim.x * blockIdx.x + thidx;
   int param_index = blockIdx.y * blockDim.y + thidy;
+  int result_idx = params.rows * obs_num + param_index;
 
   // set up shared data
   extern __shared__ float sData[];
@@ -128,21 +145,17 @@ __global__ void mvnpdf_k(const PMatrix data, const PMatrix params, float* output
 
   // coalesce data into shared memory in chunks
   copy_data(&data, sh_data, thidx, thidy, obs_num);
-  __syncthreads();
-
   copy_params(&params, sh_params, thidx, thidy, param_index);
-  __syncthreads();
 
   int sh_idx = thidy * blockDim.x + thidx;
-  if (obs_num < data.rows & param_index < params.rows) {
-    float d = compute_pdf(sh_data + thidx * data.cols,
-                          sh_params + thidy * params.stride,
-                          data.cols);
-    sh_result[sh_idx] = d;
-  }
+  // allocated enough shared memory so that this will not walk out of bounds
+  // no matter what
+  sh_result[sh_idx] = compute_pdf(sh_data + thidx * data.cols,
+								  sh_params + thidy * params.stride,
+								  data.cols);
   __syncthreads();
 
-  int result_idx = params.rows * obs_num + param_index;
+  // does this coalesce?
   if (obs_num < data.rows & param_index < params.rows) {
     output[result_idx] = sh_result[sh_idx];
   }
@@ -289,11 +302,9 @@ void mvnpdf2(float* h_data, /** Data-vector; padded */
 void cpu_mvnormpdf(float* x, float* density, float * output, int D, int N, int T) {
     int LOGDET_OFFSET = D * (D + 3) / 2;
     int MEAN_CHD_DIM = D * (D + 3) / 2  + 2;
-    int PACK_DIM = 16;
 
-    while (MEAN_CHD_DIM > PACK_DIM) {PACK_DIM += 16;}
-    int DATA_PADDED_DIM = 8;
-    while (D > DATA_PADDED_DIM) {DATA_PADDED_DIM += 8;}
+	int PACK_DIM = next_multiple(MEAN_CHD_DIM, 16);
+	int DATA_PADDED_DIM = next_multiple(D, 8);
 
     float* xx = (float*) malloc(D * sizeof(float));
     int obs, component;

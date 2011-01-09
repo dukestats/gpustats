@@ -7,11 +7,13 @@ import pymc.flib as flib
 import time
 import testmod
 
-# def test(k=4, n=100):
-def gen_testdata():
+def gen_testdata(n=100, k=4):
     # use static data to compare to R
     data = randn(n, k)
     mean = randn(k)
+
+    np.savetxt('test_data', data)
+    np.savetxt('test_mean', mean)
 
 def load_testdata():
     data = np.loadtxt('test_data')
@@ -68,7 +70,7 @@ if __name__ == '__main__':
 
     data, mean, cov = load_testdata()
 
-    j = 32
+    j = 1
 
     n = 1e5
     k = 14
@@ -77,7 +79,7 @@ if __name__ == '__main__':
     mean = randn(k)
     cov = random_cov(k) # np.cov(data.T)
 
-    j = 256
+    j = 64
 
     packed_data = testmod.pack_data(data)
 
@@ -102,7 +104,7 @@ if __name__ == '__main__':
     diff = np.where(np.abs(r1 - r2) < 1e-4, 0, r1 - r2)
     print diff.sum() / np.prod(diff.shape)
 
-    # print diff[diff.sum(1) != 0], np.arange(len(diff))[diff.sum(1) != 0]
+    print diff[diff.sum(1) != 0], np.arange(len(diff))[diff.sum(1) != 0]
 
     print r2[0][:32]
     print packed_data[0]

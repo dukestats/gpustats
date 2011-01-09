@@ -4,7 +4,7 @@ CUDA_PATH = /usr/local/cuda
 CC := gcc
 CXX = g++
 NVCC = $(CUDA_PATH)/bin/nvcc
-NVCC_DBG_FLAGS = -Wall -Xcompiler -fno-strict-aliasing,-fPIC
+NVCC_DBG_FLAGS = -Xcompiler -fno-strict-aliasing,-fPIC
 
 INCPATH =
 # compiler / linker flags
@@ -36,7 +36,7 @@ ifeq ($(OSNAME),Darwin)
 endif
 
 CC_ARCH_FLAGS :=
-NVCCFLAGS :=
+# NVCCFLAGS :=
 
 ifeq ($(OSNAME),Darwin)
 	NVCCFLAGS += -m32
