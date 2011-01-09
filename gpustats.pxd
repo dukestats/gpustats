@@ -13,17 +13,6 @@ cdef extern from "common.h":
     void PMatrix_init(float* d, int r, int c, int s)
 
 cdef extern from "mvnpdf.h":
-    cudaError_t gpuMvNormalPDF(
-        float* iData,
-        float* iDensityInfo,
-        float* oMeasure,
-        int iD,
-        int iN,
-        int iTJ,
-        int PACK_DIM,
-        int DIM
-        )
-
     void mvnpdf2(float* h_data,
                  float* h_params,
                  float* h_pdf,

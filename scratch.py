@@ -107,7 +107,7 @@ if __name__ == '__main__':
     print r2[0][:32]
     print packed_data[0]
 
-    gruns = 1
+    gruns = 10
 
     _s = time.clock()
     for i in xrange(gruns):

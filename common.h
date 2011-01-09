@@ -3,6 +3,8 @@
 
 #include <math.h>
 #include <cuda.h>
+#include <cuda_runtime_api.h>
+
 /* Dimension specific definitions to ensure coalesced memory transactions */
 
 extern int DIM,MEAN_CHD_DIM,PACK_DIM,CHD_DIM,LOGDET_OFFSET,DATA_PADDED_DIM,NCHUNKSIZE;
@@ -115,5 +117,9 @@ void doStore(int instance);
 void doRestore(int instance);
 
 void handleStoreRestoreQueue(int instance);
+
+int smem_size();
+
+int max_block_threads();
 
 #endif // __GPUSTATS_COMMON__

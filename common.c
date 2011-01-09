@@ -2,8 +2,6 @@
 #include <stdlib.h>
 #include <string.h>
 #include <cuda.h>
-#include <cuda_runtime_api.h>
-
 #include "common.h"
 
 #if _WIN32
