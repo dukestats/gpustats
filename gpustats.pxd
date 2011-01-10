@@ -13,14 +13,14 @@ cdef extern from "common.h":
     void PMatrix_init(float* d, int r, int c, int s)
 
 cdef extern from "mvnpdf.h":
-    void mvnpdf2(float* h_data,
-                 float* h_params,
-                 float* h_pdf,
-                 int data_dim,
-                 int total_obs,
-                 int nparams,
-                 int param_stride,
-                 int data_stride)
+    void mvnpdf(float* h_data,
+                float* h_params,
+                float* h_pdf,
+                int data_dim,
+                int total_obs,
+                int nparams,
+                int param_stride,
+                int data_stride)
 
     void cpu_mvnormpdf(float* x, float* density, float * output, int D,
                        int N, int T)

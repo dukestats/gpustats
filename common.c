@@ -17,8 +17,8 @@ REAL *allocateGPURealMemory(int length) {
 	cudaError_t error;
 	SAFE_CUDA(cudaMalloc((void**) &data, SIZE_REAL * length),data);
 	if (data == NULL) {
-		fprintf(stderr,"Failed to allocate REAL (%d) memory on device!\n",
-				length);
+		/* fprintf(stderr,"Failed to allocate REAL (%d) memory on device!\n", */
+		/* 		length); */
 		// TODO clean up and gracefully die
 		exit(-1);
 	}

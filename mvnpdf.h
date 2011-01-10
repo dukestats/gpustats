@@ -9,7 +9,7 @@ extern "C" {
 
 #include "common.h"
 
-void mvnpdf2(float* h_data, /** Data-vector; padded */
+void mvnpdf(float* h_data, /** Data-vector; padded */
 			 float* h_params, /** Density info; already padded */
 			 float* h_pdf, /** Resultant PDF */
 			 int data_dim,

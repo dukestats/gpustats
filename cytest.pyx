@@ -59,17 +59,6 @@ def pack_data(data):
     else:
         return prep_ndarray(data)
 
-def mvnpdf3(ndarray packed_data, ndarray packed_params, int dim):
-    n, k = (<object> packed_data).shape
-    pn, pk = (<object> packed_params).shape
-    cdef ndarray output = np.empty((n, pn), np.float32)
-    gps.mvnpdf2(<float*> packed_data.data,
-                 <float*> packed_params.data,
-                 <float*> output.data,
-                 dim, n, pn, pk, k)
-
-    return output
-
 def cpu_mvnpdf(ndarray packed_data, ndarray packed_params, int dim):
     n, j = len(packed_data), len(packed_params)
 
@@ -83,21 +72,21 @@ def cpu_mvnpdf(ndarray packed_data, ndarray packed_params, int dim):
 
 def mvnpdf(ndarray data, means, chol_sigmas, logdets):
     cdef ndarray output, packed_params, packed_data
-    cdef gps.cudaError_t res
     n, k = (<object> data).shape
     j = len(means)
 
     packed_params = pack_params(means, chol_sigmas, logdets)
     packed_data = pack_data(data)
+    return _mvnpdf(packed_data, packed_params, k)
 
-    output = np.empty((n, j), np.float32)
-
-    gps.mvnpdf2(<float*> packed_data.data,
-                 <float*> packed_params.data,
-                 <float*> output.data,
-                 k, n, j,
-                 packed_params.shape[1],
-                 packed_data.shape[1])
+def _mvnpdf(ndarray packed_data, ndarray packed_params, int dim):
+    n, k = (<object> packed_data).shape
+    pn, pk = (<object> packed_params).shape
+    cdef ndarray output = np.empty((n, pn), np.float32)
+    gps.mvnpdf(<float*> packed_data.data,
+                <float*> packed_params.data,
+                <float*> output.data,
+                dim, n, pn, pk, k)
 
     return output
 

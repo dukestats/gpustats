@@ -17,38 +17,75 @@ int compute_shmem(PMatrix* data, PMatrix* params, int nparams, int ndata) {
   return sizeof(float) * (result_space + param_space + data_space);
 }
 
-void get_tuned_layout(TuningInfo* info, PMatrix* data, PMatrix* params) {
+void get_tuned_layout(TuningInfo* info, PMatrix* data, PMatrix* params,
+					  int max_block_params) {
   // query the device for smem / max # of threads
   int max_smem = smem_size();
   int max_threads = max_block_threads();
 
   // at most max_block_params sets of density parameters per block
   // for low-dimensional data, better to do more?
-  int max_block_params = 16;
   int params_per = max_block_params;
   if (params->rows < max_block_params)
     params_per = next_pow2(params->rows, max_block_params);
 
-  // hide your kids, hide your wife (auto-tuning the GPU)
-  int data_per;
-  while (1) {
-    data_per = max_threads / params_per;
-      while (compute_shmem(data, params, params_per, data_per) > max_smem) {
-        if (data_per == 0)
-          break;
-        data_per /=2;
-      }
-
-      // can't fit max_block_params sets of parameters into the shared memory,
-      // uh oh
-      if (data_per == 0) {
-        params_per /= 2;
-
-        // start over the tuning
-        continue;
-      }
-      else break;
+  int data_per = max_threads / params_per;
+  // at least 16 data points per block
+  while (data_per < 16) {
+	params_per /= 2;
+	data_per *= 2;
   }
+
+  int half_warp = 16;
+
+  // hide your kids, hide your wife (auto-tuning the GPU)
+  while (1) {
+	while (compute_shmem(data, params, params_per, data_per) > max_smem) {
+	  if (data_per == 0)
+		break;
+
+	  if (params_per < half_warp) {
+		// no half-warp to protect, maximize data per block
+		params_per /= 2;
+	  }
+	  else {
+		// keep the half-warp
+
+		if (data_per > 1) {
+		  // TODO: should ask what is the half warp size instead of 16
+		  if (params_per > 16) {
+			params_per /= 2;
+			data_per *= 2;
+		  }
+		  else {
+			// have to do less data
+			data_per /= 2;
+		  }
+		}
+		else {
+		  params_per /= 2;
+		  data_per *= 2;
+		}
+	  }
+	}
+
+	// can't fit max_block_params sets of parameters into the shared memory,
+	// uh oh
+	if (data_per == 0) {
+	  params_per /= 2;
+
+	  // start over the tuning
+	  continue;
+	}
+	else break;
+  }
+
+  // possible to squeeze more data?
+  while (compute_shmem(data, params, params_per, 2 * data_per) <= max_smem)
+	if (2 * data_per * params_per <= max_threads)
+	  data_per *= 2;
+	else
+	  break;
 
   info->data_per_block = data_per;
   info->params_per_block = params_per;
@@ -87,7 +124,7 @@ __device__ float compute_pdf(float* data, float* params, int dim) {
     }
     discrim += sum * sum;
   }
-  return log(mult) - 0.5 * (discrim + logdet + LOG_2_PI * ((float) dim));
+  return log(mult) - 0.5 * (discrim + logdet + LOG_2_PI * (float) dim);
 }
 
 __device__ void copy_data(const PMatrix* data, float* sh_data,
@@ -105,6 +142,42 @@ __device__ void copy_data(const PMatrix* data, float* sh_data,
   }
   __syncthreads();
 }
+/*
+__device__ void copy_data_alt(const PMatrix* data, float* sh_data,
+							   int thidx, int thidy)
+{
+  const int data_start = blockDim.x * blockIdx.x * data->cols;
+  const int data_total = data->rows * data->cols;
+  const int tid = thidy * blockDim.x + thidx;
+  const int num_threads = blockDim.x * blockDim.y;
+
+  int idx;
+  for (int chunk = data_start;
+        chunk < data_start + blockDim.x * data->cols;
+        chunk += num_threads)
+  {
+     idx = chunk + tid;
+     if (idx < data_total)
+       sh_data[idx - data_start] = data->buf[idx];
+  }
+  __syncthreads();
+}
+
+__device__ void copy_params_alt(PMatrix* params, float* sh_params,
+								 int num_threads)
+{
+  const int params_start = blockDim.y * blockIdx.y * params.stride;
+  const int params_total = params.rows * params.stride;
+  for (int chunk = params_start;
+        chunk < params_start + blockDim.y * params.stride;
+        chunk += num_threads)
+  {
+     idx = chunk + tid;
+     if (idx < params_total)
+       sh_params[idx - params_start] = params.buf[idx];
+  }
+}
+*/
 
 __device__ void copy_params(const PMatrix* params, float* sh_params,
 							int thidx, int thidy, int param_index)
@@ -127,11 +200,6 @@ __global__ void mvnpdf_k(const PMatrix data, const PMatrix params, float* output
   int thidx = threadIdx.x;
   int thidy = threadIdx.y;
 
-  // const int tid = thidy * blockDim.x + thidx;
-  // const int num_threads = blockDim.x * blockDim.y;
-
-  // now compute your own pdf
-  // need to coalesce back into global memory?
   int obs_num = blockDim.x * blockIdx.x + thidx;
   int param_index = blockIdx.y * blockDim.y + thidy;
   int result_idx = params.rows * obs_num + param_index;
@@ -160,41 +228,6 @@ __global__ void mvnpdf_k(const PMatrix data, const PMatrix params, float* output
     output[result_idx] = sh_result[sh_idx];
   }
 }
-
-/*
-__device__ void copy_data_slow(PMatrix* data, float* sh_data,
-							   int num_threads)
-{
-  int idx;
-  const int data_start = blockDim.x * blockIdx.x * data.cols;
-  const int data_total = data.rows * data.cols;
-
-  for (int chunk = data_start;
-        chunk < data_start + blockDim.x * data.stride;
-        chunk += num_threads)
-  {
-     idx = chunk + tid;
-     if (idx < data_total)
-       sh_data[idx - data_start] = data.buf[idx];
-  }
-
-}
-
-__device__ void copy_params_slow(PMatrix* params, float* sh_params,
-								 int num_threads)
-{
-  const int params_start = blockDim.y * blockIdx.y * params.stride;
-  const int params_total = params.rows * params.stride;
-  for (int chunk = params_start;
-        chunk < params_start + blockDim.y * params.stride;
-        chunk += num_threads)
-  {
-     idx = chunk + tid;
-     if (idx < params_total)
-       sh_params[idx - params_start] = params.buf[idx];
-  }
-}
-*/
 
 /*
 __device__ void _write_results(PMatrix* data, PMatrix* params,
@@ -230,11 +263,13 @@ __device__ void _write_results(PMatrix* data, PMatrix* params,
 }
 */
 
+int MAX_BLOCK_PARAMS = 64;
+
 cudaError_t invoke_mvnpdf(PMatrix data, PMatrix params, float* d_pdf) {
   // Need to automatically tune block / grid layout to maximize shared memory
   // usage and coalescence, reduce wasted threads!
   TuningInfo tune_info;
-  get_tuned_layout(&tune_info, &data, &params);
+  get_tuned_layout(&tune_info, &data, &params, MAX_BLOCK_PARAMS);
 
   // Now set up grid layout / block size
   int grid_x = get_boxes(data.rows, tune_info.data_per_block);
@@ -247,7 +282,6 @@ cudaError_t invoke_mvnpdf(PMatrix data, PMatrix params, float* d_pdf) {
   int sharedMemSize = compute_shmem(&data, &params,
                                     tune_info.params_per_block,
                                     tune_info.data_per_block);
-
   printf("number params: %d, number data points: %d\n",
          tune_info.params_per_block, tune_info.data_per_block);
   printf("sharedMemSize: %d\n", sharedMemSize);
@@ -259,7 +293,7 @@ cudaError_t invoke_mvnpdf(PMatrix data, PMatrix params, float* d_pdf) {
   return cudaSuccess;
 }
 
-void mvnpdf2(float* h_data, /** Data-vector; padded */
+void mvnpdf(float* h_data, /** Data-vector; padded */
              float* h_params, /** Density info; already padded */
              float* h_pdf, /** Resultant PDF */
              int data_dim,

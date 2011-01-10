@@ -72,14 +72,14 @@ if __name__ == '__main__':
 
     j = 1
 
-    n = 1e5
-    k = 14
+    n = 1e4
+    k = 27
 
     data = randn(n, k)
     mean = randn(k)
     cov = random_cov(k) # np.cov(data.T)
 
-    j = 64
+    j = 256
 
     packed_data = testmod.pack_data(data)
 
@@ -97,7 +97,7 @@ if __name__ == '__main__':
     packed_params = testmod.pack_params(means, covs, logdets)
 
     r1 = testmod.cpu_mvnpdf(packed_data, packed_params, k).squeeze()
-    r2 = testmod.mvnpdf3(packed_data, packed_params, k).squeeze()
+    r2 = testmod._mvnpdf(packed_data, packed_params, k).squeeze()
 
     print r1
     print r2
@@ -113,9 +113,11 @@ if __name__ == '__main__':
 
     _s = time.clock()
     for i in xrange(gruns):
-        testmod.mvnpdf3(packed_data, packed_params, k).squeeze()
+        testmod._mvnpdf(packed_data, packed_params, k).squeeze()
 
     gpu_speed = (time.clock() - _s) / gruns
+
+    print 'done with gpu'
 
     cruns = 1
     _s = time.clock()
@@ -123,6 +125,7 @@ if __name__ == '__main__':
         testmod.cpu_mvnpdf(packed_data, packed_params, k).squeeze()
 
     cpu_speed = (time.clock() - _s) / cruns
+    print 'done with cpu'
 
     print 'CPU speed: %.3f' % (cpu_speed * 1000)
     print 'GPU speed: %.3f' % (gpu_speed * 1000)

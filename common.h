@@ -7,8 +7,9 @@
 
 /* Dimension specific definitions to ensure coalesced memory transactions */
 
-extern int DIM,MEAN_CHD_DIM,PACK_DIM,CHD_DIM,LOGDET_OFFSET,DATA_PADDED_DIM,NCHUNKSIZE;
+// extern int DIM,MEAN_CHD_DIM,PACK_DIM,CHD_DIM,LOGDET_OFFSET,DATA_PADDED_DIM,NCHUNKSIZE;
 
+/*
 #define DENSITIES_IN_BLOCK		16 //4 //4 for 27d data, 16 for other data
 #define	DATA_IN_BLOCK			16	//need >= 16 to be efficient
 #define SAMPLE_BLOCK			32
@@ -22,10 +23,13 @@ extern int DIM,MEAN_CHD_DIM,PACK_DIM,CHD_DIM,LOGDET_OFFSET,DATA_PADDED_DIM,NCHUN
 
 
 #define LOGPDF
+*/
 
 //#define CHECK_GPU
 
+/*
 // For algorithm 2
+
 #define	PAD_CSR				0		// Little (no?) performance gain on 9400M and complicates algorithm
 #define PAD					1		// Removes some bank conflicts (?)
 #define BLOCK_SIZE_COL		16		// # of data columns to process per block
@@ -35,6 +39,8 @@ extern int DIM,MEAN_CHD_DIM,PACK_DIM,CHD_DIM,LOGDET_OFFSET,DATA_PADDED_DIM,NCHUN
 #define GROW_INDICES		16
 
 #define COMPACT_BLOCK	256
+
+*/
 
 /* Definition of REAL can be switched between 'double' and 'float' */
 #ifdef DOUBLE_PRECISION
@@ -63,10 +69,11 @@ extern int DIM,MEAN_CHD_DIM,PACK_DIM,CHD_DIM,LOGDET_OFFSET,DATA_PADDED_DIM,NCHUN
 #define SAFE_CUDA(call,ptr) error = call; \
   if( error != 0 ) {											\
 	fprintf(stderr,"Error %s\n", cudaGetErrorString(error));	\
-	fprintf(stderr,"Ptr = %d\n",ptr);							\
 	exit(-1);													\
   }
 
+// how to suppress gcc warning?
+	// fprintf(stderr,"Ptr = %d\n", ptr);							\
 
 #define MEMCPY(to,from,length,toType) { int m; \
 										for(m=0; m<length; m++) { \
