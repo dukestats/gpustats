@@ -50,7 +50,6 @@ void get_tuned_layout(TuningInfo* info, PMatrix* data, PMatrix* params,
 	  }
 	  else {
 		// keep the half-warp
-
 		if (data_per > 1) {
 		  // TODO: should ask what is the half warp size instead of 16
 		  if (params_per > 16) {
@@ -68,7 +67,6 @@ void get_tuned_layout(TuningInfo* info, PMatrix* data, PMatrix* params,
 		}
 	  }
 	}
-
 	// can't fit max_block_params sets of parameters into the shared memory,
 	// uh oh
 	if (data_per == 0) {
@@ -142,42 +140,6 @@ __device__ void copy_data(const PMatrix* data, float* sh_data,
   }
   __syncthreads();
 }
-/*
-__device__ void copy_data_alt(const PMatrix* data, float* sh_data,
-							   int thidx, int thidy)
-{
-  const int data_start = blockDim.x * blockIdx.x * data->cols;
-  const int data_total = data->rows * data->cols;
-  const int tid = thidy * blockDim.x + thidx;
-  const int num_threads = blockDim.x * blockDim.y;
-
-  int idx;
-  for (int chunk = data_start;
-        chunk < data_start + blockDim.x * data->cols;
-        chunk += num_threads)
-  {
-     idx = chunk + tid;
-     if (idx < data_total)
-       sh_data[idx - data_start] = data->buf[idx];
-  }
-  __syncthreads();
-}
-
-__device__ void copy_params_alt(PMatrix* params, float* sh_params,
-								 int num_threads)
-{
-  const int params_start = blockDim.y * blockIdx.y * params.stride;
-  const int params_total = params.rows * params.stride;
-  for (int chunk = params_start;
-        chunk < params_start + blockDim.y * params.stride;
-        chunk += num_threads)
-  {
-     idx = chunk + tid;
-     if (idx < params_total)
-       sh_params[idx - params_start] = params.buf[idx];
-  }
-}
-*/
 
 __device__ void copy_params(const PMatrix* params, float* sh_params,
 							int thidx, int thidy, int param_index)
@@ -228,6 +190,7 @@ __global__ void mvnpdf_k(const PMatrix data, const PMatrix params, float* output
     output[result_idx] = sh_result[sh_idx];
   }
 }
+
 
 /*
 __device__ void _write_results(PMatrix* data, PMatrix* params,
@@ -322,8 +285,8 @@ void mvnpdf(float* h_data, /** Data-vector; padded */
   PMatrix_init(&pparams, d_params, nparams,
                data_dim * (data_dim + 3) / 2 + 2, param_stride);
 
-  printf("data dim: %d\n", pdata.cols);
-  printf("data padded dim: %d\n", pdata.stride);
+  // printf("data dim: %d\n", pdata.cols);
+  // printf("data padded dim: %d\n", pdata.stride);
 
   invoke_mvnpdf(pdata, pparams, d_pdf);
   d_to_h(d_pdf, h_pdf, total_obs * nparams);
@@ -348,7 +311,7 @@ void cpu_mvnormpdf(float* x, float* density, float * output, int D, int N, int T
             float discrim;
             float* tData = x + obs * DATA_PADDED_DIM;
             float* tDensityInfo = density + component * PACK_DIM;
-            float* tMean = tDensityInfo;            //do we need to unallocate shared/register variables?
+            float* tMean = tDensityInfo;
             float* tSigma = tDensityInfo + D;
             float  tP = tDensityInfo[LOGDET_OFFSET];
             float  tLogDet = tDensityInfo[LOGDET_OFFSET+1];
@@ -358,7 +321,6 @@ void cpu_mvnormpdf(float* x, float* density, float * output, int D, int N, int T
             for(int i=0; i<D; i++) {
                 float sum = 0;
                 for(int j=0; j<=i; j++) {
-                  // printf("%d %d %f %f %f\n", i, j, *tSigma, tData[j], tMean[j]);
                   sum += *tSigma * (tData[j] - tMean[j]); // xx[j] is always calculated since j <= i
                   tSigma++;
                 }
@@ -367,11 +329,6 @@ void cpu_mvnormpdf(float* x, float* density, float * output, int D, int N, int T
             }
 
             float d = log(tP) - 0.5 * (discrim + tLogDet + (LOG_2_PI*(float) D));
-            // printf("discrim: %f\n", discrim);
-            // printf("tP: %f\n", tP);
-            // printf("tLogDet: %f\n", tLogDet);
-            // printf("d: %f\n", d);
-            // printf("idx: %d\n", obs * T + component);
             output[obs * T + component] = d;
         }
     }
