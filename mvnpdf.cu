@@ -17,6 +17,7 @@ int compute_shmem(PMatrix* data, PMatrix* params, int nparams, int ndata) {
   return sizeof(float) * (result_space + param_space + data_space);
 }
 
+// Compute "optimal" block size given number of data points / parameters
 void get_tuned_layout(TuningInfo* info, PMatrix* data, PMatrix* params,
                       int max_block_params) {
   // query the device for smem / max # of threads
@@ -36,42 +37,17 @@ void get_tuned_layout(TuningInfo* info, PMatrix* data, PMatrix* params,
     data_per *= 2;
   }
 
-  int half_warp = 16;
 
-  // hide your kids, hide your wife (auto-tuning the GPU)
   while (1) {
     while (compute_shmem(data, params, params_per, data_per) > max_smem) {
       if (data_per == 0)
         break;
-
-      if (params_per < half_warp) {
-        // no half-warp to protect, maximize data per block
-        params_per /= 2;
-      }
-      else {
-        // keep the half-warp
-        if (data_per > 1) {
-          // TODO: should ask what is the half warp size instead of 16
-          if (params_per > 16) {
-            params_per /= 2;
-            data_per *= 2;
-          }
-          else {
-            // have to do less data
-            data_per /= 2;
-          }
-        }
-        else {
-          params_per /= 2;
-          data_per *= 2;
-        }
-      }
-    }
-    // can't fit max_block_params sets of parameters into the shared memory,
-    // uh oh
-    if (data_per == 0) {
       params_per /= 2;
-
+    }
+    // can't fit max_block_params sets of parameters into the shared memory
+    if (data_per == 0) {
+      data_per = 1;
+      params_per /= 2;
       // start over the tuning
       continue;
     }
@@ -112,12 +88,10 @@ __device__ float compute_pdf(float* data, float* params, int dim) {
 
   float discrim = 0;
   float sum;
-
-  int i, j;
-  for (i = 0; i < dim; ++i)
+  for (int i = 0; i < dim; ++i)
   {
     sum = 0;
-    for(j = 0; j <= i; ++j) {
+    for(int j = 0; j <= i; ++j) {
       sum += *sigma++ * (data[j] - mean[j]);
     }
     discrim += sum * sum;
@@ -128,14 +102,47 @@ __device__ float compute_pdf(float* data, float* params, int dim) {
 __device__ void copy_data(const PMatrix* data, float* sh_data,
                           int thidx, int thidy, int obs_num)
 {
-  if (obs_num >= data->rows)
-    return;
+  // if (obs_num >= data->rows)
+  //   return;
 
+  float val;
   for (int chunk = 0; chunk < data->cols; chunk += blockDim.y)
   {
+    val = data->buf[data->stride * obs_num + chunk + thidy];
     if (chunk + thidy < data->cols) {
-      sh_data[thidx * data->cols + chunk + thidy] = \
-        data->buf[data->stride * obs_num + chunk + thidy];
+      sh_data[thidx * data->cols + chunk + thidy] = val;
+    }
+  }
+  __syncthreads();
+}
+
+__device__ void copy_data2(const PMatrix* data, float* sh_data,
+                          int thidx, int thidy)
+{
+  // wow, I *cannot* get this function to work
+  // if (obs_num >= data->rows)
+  //   return;
+
+  // Each row of threads is responsible for loading this many data points to
+  // shared memory
+  int num_per_row = blockDim.x / blockDim.y;
+
+  int nobs_prior = blockIdx.x * blockDim.x + thidy * num_per_row;
+  int start_loc = data->stride * nobs_prior;
+  short sh_start_loc = data->cols * thidy * num_per_row;
+
+  int obs;
+  short datum_index;
+  float val;
+  for (int chunk = 0; chunk < data->stride * num_per_row; chunk += blockDim.x)
+  {
+    datum_index = (chunk + thidx) / data->stride;
+    obs = nobs_prior + datum_index;
+    if (obs < data->rows) {
+      val = data->buf[start_loc + chunk + thidx];
+      if (((chunk + thidx) % data->stride) < data->cols) {
+        sh_data[sh_start_loc + datum_index * data->cols + thidx] = val;
+      }
     }
   }
   __syncthreads();
@@ -157,35 +164,35 @@ __device__ void copy_params(const PMatrix* params, float* sh_params,
 }
 
 __global__ void mvnpdf_k(const PMatrix data, const PMatrix params, float* output) {
-
   // threads in row-major order, better perf?
   int thidx = threadIdx.x;
   int thidy = threadIdx.y;
 
   int obs_num = blockDim.x * blockIdx.x + thidx;
   int param_index = blockIdx.y * blockDim.y + thidy;
-  int result_idx = params.rows * obs_num + param_index;
+  int result_idx = data.rows * param_index + obs_num;
 
   // set up shared data
-  extern __shared__ float sData[];
+  extern __shared__ float shared_data[];
 
-  float* sh_params = sData; // store parameters
+  float* sh_params = shared_data; // store parameters
   float* sh_data = sh_params + blockDim.y * params.stride; // store data
   float* sh_result = sh_data + blockDim.x * data.cols; // store pdfs
 
   // coalesce data into shared memory in chunks
   copy_data(&data, sh_data, thidx, thidy, obs_num);
+  // copy_data2(&data, sh_data, thidx, thidy);
   copy_params(&params, sh_params, thidx, thidy, param_index);
 
   int sh_idx = thidy * blockDim.x + thidx;
   // allocated enough shared memory so that this will not walk out of bounds
-  // no matter what
+  // no matter what, though some of the results will be garbage
   sh_result[sh_idx] = compute_pdf(sh_data + thidx * data.cols,
                                   sh_params + thidy * params.stride,
                                   data.cols);
   __syncthreads();
 
-  // does this coalesce?
+  // output is column-major, so this will then coalesce
   if (obs_num < data.rows & param_index < params.rows) {
     output[result_idx] = sh_result[sh_idx];
   }
@@ -226,6 +233,7 @@ __device__ void _write_results(PMatrix* data, PMatrix* params,
 }
 */
 
+// XXX: fix this
 int MAX_BLOCK_PARAMS = 64;
 
 cudaError_t invoke_mvnpdf(PMatrix data, PMatrix params, float* d_pdf) {

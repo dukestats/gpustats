@@ -82,7 +82,7 @@ def mvnpdf(ndarray data, means, chol_sigmas, logdets):
 def _mvnpdf(ndarray packed_data, ndarray packed_params, int dim):
     n, k = (<object> packed_data).shape
     pn, pk = (<object> packed_params).shape
-    cdef ndarray output = np.empty((n, pn), np.float32)
+    cdef ndarray output = np.empty((n, pn), np.float32, order='F')
     gps.mvnpdf(<float*> packed_data.data,
                 <float*> packed_params.data,
                 <float*> output.data,

@@ -22,39 +22,6 @@ def load_testdata():
 
     return data, mean, cov
 
-def logpdf(x, mean, sig):
-    log2pi = np.log(2 * np.pi)
-    logdet = np.log(L.det(sig))
-
-    print logdet
-
-    cons = 0.5 * (len(x) * log2pi + logdet)
-
-    xdm = x - mean
-
-    kernel = 0.5 * np.dot(xdm, np.dot(L.inv(sig), xdm))
-    print kernel
-
-    return - (cons + kernel)
-
-def logpdf2(x, mean, sig):
-    log2pi = np.log(2 * np.pi)
-    logdet = np.log(L.det(sig))
-
-    cons = 0.5 * (len(x) * log2pi + logdet)
-
-    xdm = x - mean
-
-    ch = chol(sig)
-
-    xch = L.solve(ch, xdm)
-
-    kernel = 0.5 * np.dot(xdm, xch)
-
-    print kernel
-
-    return - (cons + kernel)
-
 def random_cov(k):
     ch = np.zeros((k, k), dtype=np.float32)
 
@@ -73,7 +40,7 @@ if __name__ == '__main__':
     j = 1
 
     n = 1e4
-    k = 27
+    k = 16
 
     data = randn(n, k)
     mean = randn(k)
@@ -109,24 +76,24 @@ if __name__ == '__main__':
     print r2[0][:32]
     print packed_data[0]
 
-    gruns = 10
+    # gruns = 50
 
-    _s = time.clock()
-    for i in xrange(gruns):
-        testmod._mvnpdf(packed_data, packed_params, k).squeeze()
+    # _s = time.clock()
+    # for i in xrange(gruns):
+    #     testmod._mvnpdf(packed_data, packed_params, k).squeeze()
 
-    gpu_speed = (time.clock() - _s) / gruns
+    # gpu_speed = (time.clock() - _s) / gruns
 
-    print 'done with gpu'
+    # print 'done with gpu'
 
-    cruns = 1
-    _s = time.clock()
-    for i in xrange(cruns):
-        testmod.cpu_mvnpdf(packed_data, packed_params, k).squeeze()
+    # cruns = 1
+    # _s = time.clock()
+    # for i in xrange(cruns):
+    #     testmod.cpu_mvnpdf(packed_data, packed_params, k).squeeze()
 
-    cpu_speed = (time.clock() - _s) / cruns
-    print 'done with cpu'
+    # cpu_speed = (time.clock() - _s) / cruns
+    # print 'done with cpu'
 
-    print 'CPU speed: %.3f' % (cpu_speed * 1000)
-    print 'GPU speed: %.3f' % (gpu_speed * 1000)
-    print cpu_speed / gpu_speed
+    # print 'CPU speed: %.3f' % (cpu_speed * 1000)
+    # print 'GPU speed: %.3f' % (gpu_speed * 1000)
+    # print cpu_speed / gpu_speed

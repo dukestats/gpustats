@@ -1,8 +1,6 @@
 #ifndef __MVNPDF_H__
 #define __MVNPDF_H__
 
-#include "macros.h"
-
 #ifdef __cplusplus
 extern "C" {
 #endif
