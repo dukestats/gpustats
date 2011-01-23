@@ -2,7 +2,7 @@ import numpy as np
 import pymc.distributions as pymc_dist
 
 PAD_MULTIPLE = 16
-DATA_PAD_MULTIPLE = 8
+HALF_WARP = 16
 
 def random_cov(dim):
     return pymc_dist.rinverse_wishart(dim, np.eye(dim))
@@ -27,10 +27,17 @@ def next_multiple(k, p):
 
     return k
 
-def pack_data(data):
+def pad_data(data):
+    """
+    Pad data to avoid bank conflicts on the GPU-- dimension should not be a
+    multiple of the half-warp size (16)
+    """
     n, k = data.shape
 
-    pad_dim = next_multiple(k, DATA_PAD_MULTIPLE)
+    if not k % HALF_WARP:
+        pad_dim = k + 1
+    else:
+        pad_dim = k
 
     if k != pad_dim:
         padded_data = np.empty((n, pad_dim), dtype=np.float32)

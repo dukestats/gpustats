@@ -31,7 +31,7 @@ def _make_test_case(n=1000, k=4, p=1):
     return pdata, pparams, python_result
 
 def prep_inputs(data, means, covs):
-    prepped_data = util.pack_data(data)
+    prepped_data = util.pad_data(data)
     ichols = [inv(chol(c)) for c in covs]
     logdets = [np.log(np.linalg.det(c)) for c in covs]
     prepped_params = util.pack_params(means, ichols, logdets)

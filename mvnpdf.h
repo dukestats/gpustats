@@ -17,8 +17,8 @@ void mvnpdf(float* h_data, /** Data-vector; padded */
 			 int data_stride // with padding
   );
 
-void cpu_mvnormpdf(float* x, float* density, float * output, int D,
-				   int N, int T);
+void cpu_mvnormpdf(float* x, float* density, float * output, int dim,
+                   int padded_dim, int N, int T);
 
 
 #ifdef __cplusplus

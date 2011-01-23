@@ -12,8 +12,6 @@ extern "C" {
 #include "mvnpdf.h"
 #include "cucommon.h"
 
-#define DEBUG
-
 int compute_shmem(PMatrix* data, PMatrix* params, int nparams, int ndata) {
   // to hold specified about of data, parameters, and results
   int result_space = nparams * ndata;
@@ -106,38 +104,6 @@ __device__ float compute_pdf(float* data, float* params, int dim) {
     discrim += sum * sum;
   }
   return log(mult) - 0.5 * (discrim + logdet + LOG_2_PI * dim);
-}
-
-__device__ void copy_data(const PMatrix* data, float* sh_data,
-                          unsigned int thidx, unsigned int thidy, unsigned int obs_num)
-{
-  // if (obs_num >= data->rows)
-  //   return;
-
-  float val;
-  for (unsigned int chunk = 0; chunk < data->cols; chunk += blockDim.y)
-  {
-    val = data->buf[data->stride * obs_num + chunk + thidy];
-    if (chunk + thidy < data->cols) {
-      sh_data[thidx * data->cols + chunk + thidy] = val;
-    }
-  }
-  __syncthreads();
-}
-
-__device__ void copy_params(const PMatrix* params, float* sh_params,
-                            unsigned int thidx, unsigned int thidy, unsigned int param_index)
-{
-  if (param_index >= params->rows)
-    return;
-
-  for (unsigned int chunk = 0; chunk < params->stride; chunk += blockDim.x)
-  {
-    if (chunk + thidx < params->stride)
-      sh_params[thidy * params->stride + chunk + thidx] = \
-        params->buf[params->stride * param_index + chunk + thidx];
-  }
-  __syncthreads();
 }
 
 __device__ void copy_chunks(float* in_buf, float* out_buf,
@@ -306,40 +272,38 @@ void mvnpdf(float* h_data, /** Data-vector; padded */
   cudaFree(d_pdf);
 }
 
-void cpu_mvnormpdf(float* x, float* density, float * output, int D, int N, int T) {
-    int LOGDET_OFFSET = D * (D + 3) / 2;
-    int MEAN_CHD_DIM = D * (D + 3) / 2  + 2;
+void cpu_mvnormpdf(float* x, float* density, float * output, int dim, int padded_dim,
+                   int N, int T) {
+    int LOGDET_OFFSET = dim * (dim + 3) / 2;
+    int MEAN_CHD_DIM = dim * (dim + 3) / 2  + 2;
 
     int PACK_DIM = next_multiple(MEAN_CHD_DIM, 16);
-    int DATA_PADDED_DIM = D; // next_multiple(D, 8);
 
-    float* xx = (float*) malloc(D * sizeof(float));
+    float* xx = (float*) malloc(dim * sizeof(float));
     int obs, component;
 
     for (obs = 0; obs < N; obs++) {
         for (component = 0; component < T; component++) {
             float discrim;
-            float* tData = x + obs * DATA_PADDED_DIM;
+            float* tData = x + obs * padded_dim;
             float* tDensityInfo = density + component * PACK_DIM;
             float* tMean = tDensityInfo;
-            float* tSigma = tDensityInfo + D;
+            float* tSigma = tDensityInfo + dim;
             float  tP = tDensityInfo[LOGDET_OFFSET];
             float  tLogDet = tDensityInfo[LOGDET_OFFSET+1];
 
             // Do density calculation
             discrim = 0;
-            for(int i=0; i<D; i++) {
+            for(int i=0; i < dim; i++) {
                 float sum = 0;
-                for(int j=0; j<=i; j++) {
+                for(int j=0; j <= i; j++) {
                   sum += *tSigma * (tData[j] - tMean[j]); // xx[j] is always calculated since j <= i
                   tSigma++;
                 }
 
                 discrim += sum * sum;
             }
-
-            float d = log(tP) - 0.5 * (discrim + tLogDet + (LOG_2_PI*(float) D));
-            output[obs * T + component] = d;
+            output[obs * T + component] = log(tP) - 0.5 * (discrim + tLogDet + (LOG_2_PI*(float) dim));
         }
     }
     free(xx);

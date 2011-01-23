@@ -25,6 +25,6 @@ cdef extern from "mvnpdf.h":
                 int data_stride)
 
     void cpu_mvnormpdf(float* x, float* density, float * output, int D,
-                       int N, int T)
+                       int padded_dim, int N, int T)
 
 

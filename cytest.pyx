@@ -15,11 +15,13 @@ def set_device(device):
 def cpu_mvnpdf(ndarray packed_data, ndarray packed_params, int dim):
     n, j = len(packed_data), len(packed_params)
 
+    padded_dim = (<object> packed_data).shape[1]
+
     cdef ndarray output = np.empty((n, j), dtype=np.float32)
     gps.cpu_mvnormpdf(<float*> packed_data.data,
                        <float*> packed_params.data,
                        <float*> output.data,
-                       dim, n, j)
+                       dim, padded_dim, n, j)
 
     return output
 

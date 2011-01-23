@@ -32,12 +32,12 @@ def bench(cpu_func, gpu_func, gruns=50):
 
     _s = time.clock()
     for i in xrange(gruns):
-        testmod._mvnpdf(packed_data, packed_params, k).squeeze()
+        gpu_func()
 
     gpu_speed = (time.clock() - _s) / gruns
 
     _s = time.clock()
-    testmod.cpu_mvnpdf(packed_data, packed_params, k).squeeze()
+    cpu_func()
     cpu_speed = (time.clock() - _s)
     print 'CPU speed: %.3f' % (cpu_speed * 1000)
     print 'GPU speed: %.3f' % (gpu_speed * 1000)
@@ -54,17 +54,15 @@ if __name__ == '__main__':
     j = 1
 
     n = 1e5
-    k = 17
+    k = 16
 
     data = randn(n, k).astype(np.float32)
     mean = randn(k)
     cov = np.array(util.random_cov(k), dtype=np.float32)
 
-    j = 256
+    j = 32
 
-    # packed_data = util.pack_data(data)
-
-    packed_data = data
+    padded_data = util.pad_data(data)
 
     chol_sigma = chol(cov)
     ichol_sigma = L.inv(chol_sigma)
@@ -77,8 +75,8 @@ if __name__ == '__main__':
 
     packed_params = util.pack_params(means, covs, logdets)
 
-    cpu_func = lambda: testmod.cpu_mvnpdf(packed_data, packed_params, k).squeeze()
-    gpu_func = lambda: testmod._mvnpdf(packed_data, packed_params, k).squeeze()
+    cpu_func = lambda: testmod.cpu_mvnpdf(padded_data, packed_params, k).squeeze()
+    gpu_func = lambda: testmod._mvnpdf(padded_data, packed_params, k).squeeze()
 
     print cpu_func()
     print gpu_func()
