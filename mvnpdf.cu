@@ -96,25 +96,26 @@ __device__ float compute_pdf(float* data, float* params, int dim) {
 
   float discrim = 0;
   float sum;
-  for (int i = 0; i < dim; ++i)
+  unsigned int i, j;
+  for (i = 0; i < dim; ++i)
   {
     sum = 0;
-    for(int j = 0; j <= i; ++j) {
+    for(j = 0; j <= i; ++j) {
       sum += *sigma++ * (data[j] - mean[j]);
     }
     discrim += sum * sum;
   }
-  return log(mult) - 0.5 * (discrim + logdet + LOG_2_PI * (float) dim);
+  return log(mult) - 0.5 * (discrim + logdet + LOG_2_PI * dim);
 }
 
 __device__ void copy_data(const PMatrix* data, float* sh_data,
-                          int thidx, int thidy, int obs_num)
+                          unsigned int thidx, unsigned int thidy, unsigned int obs_num)
 {
   // if (obs_num >= data->rows)
   //   return;
 
   float val;
-  for (int chunk = 0; chunk < data->cols; chunk += blockDim.y)
+  for (unsigned int chunk = 0; chunk < data->cols; chunk += blockDim.y)
   {
     val = data->buf[data->stride * obs_num + chunk + thidy];
     if (chunk + thidy < data->cols) {
@@ -125,12 +126,12 @@ __device__ void copy_data(const PMatrix* data, float* sh_data,
 }
 
 __device__ void copy_params(const PMatrix* params, float* sh_params,
-                            int thidx, int thidy, int param_index)
+                            unsigned int thidx, unsigned int thidy, unsigned int param_index)
 {
   if (param_index >= params->rows)
     return;
 
-  for (int chunk = 0; chunk < params->stride; chunk += blockDim.x)
+  for (unsigned int chunk = 0; chunk < params->stride; chunk += blockDim.x)
   {
     if (chunk + thidx < params->stride)
       sh_params[thidy * params->stride + chunk + thidx] = \
@@ -140,23 +141,22 @@ __device__ void copy_params(const PMatrix* params, float* sh_params,
 }
 
 __device__ void copy_chunks(float* in_buf, float* out_buf,
-                            int tid, int total) {
-  for (int chunk = 0; chunk + tid < total; chunk += blockDim.x) {
+                            unsigned int tid, unsigned int total) {
+  for (unsigned int chunk = 0; chunk + tid < total; chunk += blockDim.x) {
     out_buf[chunk + tid] = in_buf[chunk + tid];
   }
-  __syncthreads();
 }
 
 __global__ void mvnpdf_k(const PMatrix data, const PMatrix params,
                          const BlockDesign design, float* output) {
 
-  int tid = threadIdx.y * blockDim.x + threadIdx.x;
+  unsigned int tid = threadIdx.y * blockDim.x + threadIdx.x;
 
-  int rel_param = tid / design.data_per_block;
-  int rel_data = tid - rel_param * design.data_per_block;
+  unsigned int rel_param = tid / design.data_per_block;
+  unsigned int rel_data = tid - rel_param * design.data_per_block;
 
-  int obs_num = design.data_per_block * blockIdx.x + rel_data;
-  int param_num = design.params_per_block * blockIdx.y + rel_param;
+  unsigned int obs_num = design.data_per_block * blockIdx.x + rel_data;
+  unsigned int param_num = design.params_per_block * blockIdx.y + rel_param;
 
   // set up shared data
   extern __shared__ float shared_data[];
@@ -167,6 +167,7 @@ __global__ void mvnpdf_k(const PMatrix data, const PMatrix params,
 
   // copy_data(&data, sh_data, thidx, thidy, obs_num);
   // copy_params(&params, sh_params, thidx, thidy, param_index);
+
   copy_chunks(data.buf + design.data_per_block * blockIdx.x * data.stride,
               sh_data, tid,
               min(data.rows - design.data_per_block * blockIdx.x,
@@ -174,8 +175,10 @@ __global__ void mvnpdf_k(const PMatrix data, const PMatrix params,
 
   copy_chunks(params.buf + design.params_per_block * blockIdx.y * params.stride,
               sh_params, tid,
-              min(params.rows - design.params_per_block * blockIdx.y,
-                  design.params_per_block) * params.stride);
+              min(design.params_per_block,
+                  params.rows - design.params_per_block * blockIdx.y) * params.stride);
+
+  __syncthreads();
 
   // allocated enough shared memory so that this will not walk out of bounds
   // no matter what, though some of the results will be garbage
@@ -184,7 +187,7 @@ __global__ void mvnpdf_k(const PMatrix data, const PMatrix params,
                                data.cols);
   __syncthreads();
 
-  int result_idx = data.rows * param_num + obs_num;
+  unsigned int result_idx = data.rows * param_num + obs_num;
 
   // output is column-major, so this will then coalesce
   if (obs_num < data.rows & param_num < params.rows) {
@@ -308,7 +311,7 @@ void cpu_mvnormpdf(float* x, float* density, float * output, int D, int N, int T
     int MEAN_CHD_DIM = D * (D + 3) / 2  + 2;
 
     int PACK_DIM = next_multiple(MEAN_CHD_DIM, 16);
-    int DATA_PADDED_DIM = next_multiple(D, 8);
+    int DATA_PADDED_DIM = D; // next_multiple(D, 8);
 
     float* xx = (float*) malloc(D * sizeof(float));
     int obs, component;

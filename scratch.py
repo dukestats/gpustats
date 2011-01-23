@@ -54,15 +54,17 @@ if __name__ == '__main__':
     j = 1
 
     n = 1e5
-    k = 14
+    k = 17
 
-    data = randn(n, k)
+    data = randn(n, k).astype(np.float32)
     mean = randn(k)
     cov = np.array(util.random_cov(k), dtype=np.float32)
 
-    j = 64
+    j = 256
 
-    packed_data = util.pack_data(data)
+    # packed_data = util.pack_data(data)
+
+    packed_data = data
 
     chol_sigma = chol(cov)
     ichol_sigma = L.inv(chol_sigma)
@@ -81,4 +83,4 @@ if __name__ == '__main__':
     print cpu_func()
     print gpu_func()
 
-    # bench(cpu_func, gpu_func, gruns=50)
+    bench(cpu_func, gpu_func, gruns=50)
