@@ -44,14 +44,7 @@ def bench(cpu_func, gpu_func, gruns=50):
     print cpu_speed / gpu_speed
 
 if __name__ == '__main__':
-    k = 5
-    n = 16
-
     testmod.set_device(0)
-
-    data, mean, cov = load_testdata()
-
-    j = 1
 
     n = 1e5
     k = 16
