@@ -12,6 +12,8 @@ cdef extern from "common.h":
 
     void PMatrix_init(float* d, int r, int c, int s)
 
+    void set_device(int device)
+
 cdef extern from "mvnpdf.h":
     void mvnpdf(float* h_data,
                 float* h_params,

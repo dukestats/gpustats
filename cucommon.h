@@ -46,7 +46,7 @@ void PMatrix_init(PMatrix* mat, float* data, int rows, int cols, int stride){
 typedef struct {
   int data_per_block;
   int params_per_block;
-} TuningInfo;
+} BlockDesign;
 
 int next_pow2(int k, int pow2) {
   // next highest power of two

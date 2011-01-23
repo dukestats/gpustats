@@ -85,6 +85,9 @@
 #define LOG_2_PI 1.83787706640935
 #define LOG_PI 1.144729885849400
 
+
+void set_device(int device);
+
 int initCUDAContext();
 
 int migrateContext(CUcontext context);

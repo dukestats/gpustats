@@ -1,3 +1,7 @@
+/*
+  Multivariate normal pdf implementation
+ */
+
 #ifndef _INCLUDED_MVNPDF
 #define _INCLUDED_MVNPDF
 
@@ -8,20 +12,22 @@ extern "C" {
 #include "mvnpdf.h"
 #include "cucommon.h"
 
+#define DEBUG
+
 int compute_shmem(PMatrix* data, PMatrix* params, int nparams, int ndata) {
   // to hold specified about of data, parameters, and results
   int result_space = nparams * ndata;
   int param_space = params->stride * nparams;
-  int data_space = data->cols * ndata;
+  int data_space = data->stride * ndata;
 
   return sizeof(float) * (result_space + param_space + data_space);
 }
 
 // Compute "optimal" block size given number of data points / parameters
-void get_tuned_layout(TuningInfo* info, PMatrix* data, PMatrix* params,
+void get_tuned_layout(BlockDesign* info, PMatrix* data, PMatrix* params,
                       int max_block_params) {
   // query the device for smem / max # of threads
-  int max_smem = smem_size();
+  int max_smem = smem_size() / 10 * 9;
   int max_threads = max_block_threads();
 
   // at most max_block_params sets of density parameters per block
@@ -32,17 +38,19 @@ void get_tuned_layout(TuningInfo* info, PMatrix* data, PMatrix* params,
 
   int data_per = max_threads / params_per;
   // at least 16 data points per block
-  while (data_per < 16) {
+  while (data_per < 16 & params_per > 1) {
     params_per /= 2;
     data_per *= 2;
   }
 
-
   while (1) {
     while (compute_shmem(data, params, params_per, data_per) > max_smem) {
-      if (data_per == 0)
+      if (data_per <= 1)
         break;
-      params_per /= 2;
+      if (params_per > 1)
+        params_per /= 2;
+      else
+        data_per /= 2;
     }
     // can't fit max_block_params sets of parameters into the shared memory
     if (data_per == 0) {
@@ -117,33 +125,10 @@ __device__ void copy_data(const PMatrix* data, float* sh_data,
 }
 
 __device__ void copy_data2(const PMatrix* data, float* sh_data,
-                          int thidx, int thidy)
+                           int tid, int start, int end)
 {
-  // wow, I *cannot* get this function to work
-  // if (obs_num >= data->rows)
-  //   return;
-
-  // Each row of threads is responsible for loading this many data points to
-  // shared memory
-  int num_per_row = blockDim.x / blockDim.y;
-
-  int nobs_prior = blockIdx.x * blockDim.x + thidy * num_per_row;
-  int start_loc = data->stride * nobs_prior;
-  short sh_start_loc = data->cols * thidy * num_per_row;
-
-  int obs;
-  short datum_index;
-  float val;
-  for (int chunk = 0; chunk < data->stride * num_per_row; chunk += blockDim.x)
-  {
-    datum_index = (chunk + thidx) / data->stride;
-    obs = nobs_prior + datum_index;
-    if (obs < data->rows) {
-      val = data->buf[start_loc + chunk + thidx];
-      if (((chunk + thidx) % data->stride) < data->cols) {
-        sh_data[sh_start_loc + datum_index * data->cols + thidx] = val;
-      }
-    }
+  for (int chunk = 0; chunk < (end - start); chunk += blockDim.x) {
+    sh_data[chunk + tid] = data->buf[start + chunk + tid];
   }
   __syncthreads();
 }
@@ -163,38 +148,72 @@ __device__ void copy_params(const PMatrix* params, float* sh_params,
   __syncthreads();
 }
 
-__global__ void mvnpdf_k(const PMatrix data, const PMatrix params, float* output) {
-  // threads in row-major order, better perf?
-  int thidx = threadIdx.x;
-  int thidy = threadIdx.y;
+__device__ void copy_params2(const PMatrix* params, float* sh_params,
+                            int thidx, int thidy, int param_index)
+{
+  if (param_index >= params->rows)
+    return;
 
-  int obs_num = blockDim.x * blockIdx.x + thidx;
-  int param_index = blockIdx.y * blockDim.y + thidy;
-  int result_idx = data.rows * param_index + obs_num;
+  for (int chunk = 0; chunk < params->stride; chunk += blockDim.x)
+  {
+    if (chunk + thidx < params->stride)
+      sh_params[thidy * params->stride + chunk + thidx] = \
+        params->buf[params->stride * param_index + chunk + thidx];
+  }
+  __syncthreads();
+}
+
+__device__ void copy_chunks(const float* in_buf, float* out_buf,
+                            int tid, int n) {
+  for (int chunk = 0; chunk + tid < n; chunk += blockDim.x) {
+    out_buf[chunk + tid] = in_buf[chunk + tid];
+  }
+  __syncthreads();
+}
+
+__global__ void mvnpdf_k(const PMatrix data, const PMatrix params,
+                         const BlockDesign design, float* output) {
+
+  int tid = threadIdx.x;
+  int data_idx = tid % design.data_per_block;
+  int param_idx = tid / design.params_per_block;
 
   // set up shared data
   extern __shared__ float shared_data[];
 
   float* sh_params = shared_data; // store parameters
-  float* sh_data = sh_params + blockDim.y * params.stride; // store data
-  float* sh_result = sh_data + blockDim.x * data.cols; // store pdfs
+  float* sh_data = sh_params + design.params_per_block * params.stride; // store data
+  float* sh_result = sh_data + design.data_per_block * data.stride; // store pdfs
 
-  // coalesce data into shared memory in chunks
-  copy_data(&data, sh_data, thidx, thidy, obs_num);
-  // copy_data2(&data, sh_data, thidx, thidy);
-  copy_params(&params, sh_params, thidx, thidy, param_index);
+  // number of data points before this block
+  int obs_prior = design.data_per_block * blockIdx.x;
+  int params_prior = design.params_per_block * blockIdx.y;
 
-  int sh_idx = thidy * blockDim.x + thidx;
+  // copy_data(&data, sh_data, thidx, thidy, obs_num);
+  // copy_params(&params, sh_params, thidx, thidy, param_index);
+
+  copy_chunks(data.buf + obs_prior * data.stride,
+              sh_data, tid,
+              min(data.rows - obs_prior, design.data_per_block) * data.stride);
+
+  copy_chunks(params.buf + params_prior * params.stride,
+              sh_params, tid,
+              min(params.rows - params_prior, design.params_per_block) * params.stride);
+
   // allocated enough shared memory so that this will not walk out of bounds
   // no matter what, though some of the results will be garbage
-  sh_result[sh_idx] = compute_pdf(sh_data + thidx * data.cols,
-                                  sh_params + thidy * params.stride,
-                                  data.cols);
+  sh_result[tid] = compute_pdf(sh_data + data_idx * data.stride,
+                               sh_params + param_idx * params.stride,
+                               data.cols);
   __syncthreads();
 
+  int obs_num = design.data_per_block * blockIdx.x + data_idx;
+  int param_num = design.params_per_block * blockIdx.y + param_idx;
+  int result_idx = data.rows * param_num + obs_num;
+
   // output is column-major, so this will then coalesce
-  if (obs_num < data.rows & param_index < params.rows) {
-    output[result_idx] = sh_result[sh_idx];
+  if (obs_num < data.rows & param_num < params.rows) {
+    output[result_idx] = sh_result[tid];
   }
 }
 
@@ -239,28 +258,32 @@ int MAX_BLOCK_PARAMS = 64;
 cudaError_t invoke_mvnpdf(PMatrix data, PMatrix params, float* d_pdf) {
   // Need to automatically tune block / grid layout to maximize shared memory
   // usage and coalescence, reduce wasted threads!
-  TuningInfo tune_info;
-  get_tuned_layout(&tune_info, &data, &params, MAX_BLOCK_PARAMS);
+  BlockDesign design;
+  get_tuned_layout(&design, &data, &params, MAX_BLOCK_PARAMS);
+
+  int nthreads = design.data_per_block * design.params_per_block;
 
   // Now set up grid layout / block size
-  int grid_x = get_boxes(data.rows, tune_info.data_per_block);
-  int grid_y = get_boxes(params.rows, tune_info.params_per_block);
+  int grid_x = get_boxes(data.rows, design.data_per_block);
+  int grid_y = get_boxes(params.rows, design.params_per_block);
   dim3 gridPDF(grid_x, grid_y);
 
-  dim3 blockPDF(tune_info.data_per_block,
-                tune_info.params_per_block);
+  dim3 blockPDF(nthreads, 1);
 
   int sharedMemSize = compute_shmem(&data, &params,
-                                    tune_info.params_per_block,
-                                    tune_info.data_per_block);
+                                    design.params_per_block,
+                                    design.data_per_block);
+
+#ifdef DEBUG
   printf("number params: %d, number data points: %d\n",
-         tune_info.params_per_block, tune_info.data_per_block);
+         design.params_per_block, design.data_per_block);
   printf("sharedMemSize: %d\n", sharedMemSize);
   printf("block: %d x %d, grid: %d x %d\n", blockPDF.x, blockPDF.y,
          gridPDF.x, gridPDF.y);
   printf("nparams: %d\n", params.rows);
+#endif
 
-  mvnpdf_k<<<gridPDF,blockPDF,sharedMemSize>>>(data, params, d_pdf);
+  mvnpdf_k<<<gridPDF,blockPDF,sharedMemSize>>>(data, params, design, d_pdf);
   return cudaSuccess;
 }
 
