@@ -12,8 +12,6 @@ extern "C" {
 #include "mvnpdf.h"
 #include "cucommon.h"
 
-#define DEBUG
-
 int compute_shmem(PMatrix* data, PMatrix* params, int nparams, int ndata) {
   // to hold specified about of data, parameters, and results
   int result_space = nparams * ndata;
@@ -124,15 +122,6 @@ __device__ void copy_data(const PMatrix* data, float* sh_data,
   __syncthreads();
 }
 
-__device__ void copy_data2(const PMatrix* data, float* sh_data,
-                           int tid, int start, int end)
-{
-  for (int chunk = 0; chunk < (end - start); chunk += blockDim.x) {
-    sh_data[chunk + tid] = data->buf[start + chunk + tid];
-  }
-  __syncthreads();
-}
-
 __device__ void copy_params(const PMatrix* params, float* sh_params,
                             int thidx, int thidy, int param_index)
 {
@@ -148,24 +137,9 @@ __device__ void copy_params(const PMatrix* params, float* sh_params,
   __syncthreads();
 }
 
-__device__ void copy_params2(const PMatrix* params, float* sh_params,
-                            int thidx, int thidy, int param_index)
-{
-  if (param_index >= params->rows)
-    return;
-
-  for (int chunk = 0; chunk < params->stride; chunk += blockDim.x)
-  {
-    if (chunk + thidx < params->stride)
-      sh_params[thidy * params->stride + chunk + thidx] = \
-        params->buf[params->stride * param_index + chunk + thidx];
-  }
-  __syncthreads();
-}
-
-__device__ void copy_chunks(const float* in_buf, float* out_buf,
-                            int tid, int n) {
-  for (int chunk = 0; chunk + tid < n; chunk += blockDim.x) {
+__device__ void copy_chunks(float* in_buf, float* out_buf,
+                            int tid, int total) {
+  for (int chunk = 0; chunk + tid < total; chunk += blockDim.x) {
     out_buf[chunk + tid] = in_buf[chunk + tid];
   }
   __syncthreads();
@@ -174,9 +148,13 @@ __device__ void copy_chunks(const float* in_buf, float* out_buf,
 __global__ void mvnpdf_k(const PMatrix data, const PMatrix params,
                          const BlockDesign design, float* output) {
 
-  int tid = threadIdx.x;
-  int data_idx = tid % design.data_per_block;
-  int param_idx = tid / design.params_per_block;
+  int tid = threadIdx.y * blockDim.x + threadIdx.x;
+
+  int rel_param = tid / design.data_per_block;
+  int rel_data = tid - rel_param * design.data_per_block;
+
+  int obs_num = design.data_per_block * blockIdx.x + rel_data;
+  int param_num = design.params_per_block * blockIdx.y + rel_param;
 
   // set up shared data
   extern __shared__ float shared_data[];
@@ -202,13 +180,11 @@ __global__ void mvnpdf_k(const PMatrix data, const PMatrix params,
 
   // allocated enough shared memory so that this will not walk out of bounds
   // no matter what, though some of the results will be garbage
-  sh_result[tid] = compute_pdf(sh_data + data_idx * data.stride,
-                               sh_params + param_idx * params.stride,
+  sh_result[tid] = compute_pdf(sh_data + rel_data * data.stride,
+                               sh_params + rel_param * params.stride,
                                data.cols);
   __syncthreads();
 
-  int obs_num = design.data_per_block * blockIdx.x + data_idx;
-  int param_num = design.params_per_block * blockIdx.y + param_idx;
   int result_idx = data.rows * param_num + obs_num;
 
   // output is column-major, so this will then coalesce
@@ -267,7 +243,6 @@ cudaError_t invoke_mvnpdf(PMatrix data, PMatrix params, float* d_pdf) {
   int grid_x = get_boxes(data.rows, design.data_per_block);
   int grid_y = get_boxes(params.rows, design.params_per_block);
   dim3 gridPDF(grid_x, grid_y);
-
   dim3 blockPDF(nthreads, 1);
 
   int sharedMemSize = compute_shmem(&data, &params,
@@ -280,6 +255,8 @@ cudaError_t invoke_mvnpdf(PMatrix data, PMatrix params, float* d_pdf) {
   printf("sharedMemSize: %d\n", sharedMemSize);
   printf("block: %d x %d, grid: %d x %d\n", blockPDF.x, blockPDF.y,
          gridPDF.x, gridPDF.y);
+  printf("design: %d x %d\n", design.data_per_block, design.params_per_block);
+
   printf("nparams: %d\n", params.rows);
 #endif
 

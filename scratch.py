@@ -53,14 +53,14 @@ if __name__ == '__main__':
 
     j = 1
 
-    n = 100
-    k = 14
+    n = 1e5
+    k = 8
 
     data = randn(n, k)
     mean = randn(k)
     cov = np.array(util.random_cov(k), dtype=np.float32)
 
-    j = 1
+    j = 256
 
     packed_data = util.pack_data(data)
 
@@ -81,4 +81,4 @@ if __name__ == '__main__':
     print cpu_func()
     print gpu_func()
 
-    # bench(cpu_func, gpu_func, gruns=1)
+    bench(cpu_func, gpu_func, gruns=50)
