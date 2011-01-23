@@ -12,6 +12,8 @@ extern "C" {
 #include "mvnpdf.h"
 #include "cucommon.h"
 
+#define DEBUG
+
 int compute_shmem(PMatrix* data, PMatrix* params, int nparams, int ndata) {
   // to hold specified about of data, parameters, and results
   int result_space = nparams * ndata;

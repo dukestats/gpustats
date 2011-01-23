@@ -54,13 +54,13 @@ if __name__ == '__main__':
     j = 1
 
     n = 1e5
-    k = 8
+    k = 14
 
     data = randn(n, k)
     mean = randn(k)
     cov = np.array(util.random_cov(k), dtype=np.float32)
 
-    j = 256
+    j = 64
 
     packed_data = util.pack_data(data)
 
