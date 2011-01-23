@@ -126,13 +126,9 @@ __global__ void mvnpdf_k(const PMatrix data, const PMatrix params,
 
   // set up shared data
   extern __shared__ float shared_data[];
-
-  float* sh_params = shared_data; // store parameters
-  float* sh_data = sh_params + design.params_per_block * params.stride; // store data
-  float* sh_result = sh_data + design.data_per_block * data.stride; // store pdfs
-
-  // copy_data(&data, sh_data, thidx, thidy, obs_num);
-  // copy_params(&params, sh_params, thidx, thidy, param_index);
+  float* sh_params = shared_data;
+  float* sh_data = sh_params + design.params_per_block * params.stride;
+  float* sh_result = sh_data + design.data_per_block * data.stride;
 
   copy_chunks(data.buf + design.data_per_block * blockIdx.x * data.stride,
               sh_data, tid,
