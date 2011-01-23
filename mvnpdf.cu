@@ -165,20 +165,17 @@ __global__ void mvnpdf_k(const PMatrix data, const PMatrix params,
   float* sh_data = sh_params + design.params_per_block * params.stride; // store data
   float* sh_result = sh_data + design.data_per_block * data.stride; // store pdfs
 
-  // number of data points before this block
-  int obs_prior = design.data_per_block * blockIdx.x;
-  int params_prior = design.params_per_block * blockIdx.y;
-
   // copy_data(&data, sh_data, thidx, thidy, obs_num);
   // copy_params(&params, sh_params, thidx, thidy, param_index);
-
-  copy_chunks(data.buf + obs_prior * data.stride,
+  copy_chunks(data.buf + design.data_per_block * blockIdx.x * data.stride,
               sh_data, tid,
-              min(data.rows - obs_prior, design.data_per_block) * data.stride);
+              min(data.rows - design.data_per_block * blockIdx.x,
+                  design.data_per_block) * data.stride);
 
-  copy_chunks(params.buf + params_prior * params.stride,
+  copy_chunks(params.buf + design.params_per_block * blockIdx.y * params.stride,
               sh_params, tid,
-              min(params.rows - params_prior, design.params_per_block) * params.stride);
+              min(params.rows - design.params_per_block * blockIdx.y,
+                  design.params_per_block) * params.stride);
 
   // allocated enough shared memory so that this will not walk out of bounds
   // no matter what, though some of the results will be garbage

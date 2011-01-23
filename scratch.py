@@ -81,4 +81,4 @@ if __name__ == '__main__':
     print cpu_func()
     print gpu_func()
 
-    bench(cpu_func, gpu_func, gruns=50)
+    # bench(cpu_func, gpu_func, gruns=50)
