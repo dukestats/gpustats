@@ -157,41 +157,6 @@ __global__ void mvnpdf_k(const PMatrix data, const PMatrix params,
   }
 }
 
-
-/*
-__device__ void _write_results(PMatrix* data, PMatrix* params,
-                               float* output, float* sh_result,
-                               int thidx, int thidy,
-                               int tid)
-{
-  // write out in other order to coalesce
-  // transpose! to get it to coalesce
-  const int result_idx = param_index * data.rows + obs_num;
-
-  // thread number in column-major order
-  tid = thidx * blockDim.y + thidy;
-  obs_num = blockDim.x * blockIdx.x + tid / blockDim.y;
-  param_index = blockIdx.y * blockDim.y + tid % blockDim.y;
-  const int result_idx = params.rows * obs_num + tid % blockDim.y;
-
-  if (obs_num < data.rows & param_index < params.rows) {
-     float d = compute_pdf(sh_data + thidx * data.cols,
-                           sh_params + thidy * params.stride,
-                           data.cols);
-     sh_result[thidx * blockDim.x + thidy] = d;
-  }
-  __syncthreads();
-
-  // int result_idx = params.rows * obs_num + param_index;
-  int result_idx = (blockIdx.x * blockDim.x * params.rows
-                     + blockIdx.y * blockDim.y + thidy * params.rows
-                     + thidx);
-  if (obs_num < data.rows & param_index < params.rows) {
-     output[result_idx] = sh_result[thidx + thidy * blockDim.y];
-  }
-}
-*/
-
 // XXX: fix this
 int MAX_BLOCK_PARAMS = 64;
 
@@ -256,9 +221,6 @@ void mvnpdf(float* h_data, /** Data-vector; padded */
   PMatrix_init(&pdata, d_data, total_obs, data_dim, data_stride);
   PMatrix_init(&pparams, d_params, nparams,
                data_dim * (data_dim + 3) / 2 + 2, param_stride);
-
-  // printf("data dim: %d\n", pdata.cols);
-  // printf("data padded dim: %d\n", pdata.stride);
 
   invoke_mvnpdf(pdata, pparams, d_pdf);
   d_to_h(d_pdf, h_pdf, total_obs * nparams);
