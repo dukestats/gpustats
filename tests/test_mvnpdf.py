@@ -27,8 +27,7 @@ def _make_test_case(n=1000, k=4, p=1):
     covs = [util.random_cov(k) for _ in range(p)]
     means = (data.mean(0),) * p
     python_result = python_mvnpdf(data, means, covs, k)
-    pdata, pparams = prep_inputs(data, means, covs)
-    return pdata, pparams, python_result
+    return data, means, covs, python_result
 
 def prep_inputs(data, means, covs):
     prepped_data = util.pad_data(data)
@@ -53,13 +52,16 @@ class TestMVN(unittest.TestCase):
                   (10, 15, 2)]
 
     def _check_cpu_case(self, n, k, p):
-        data, params, result = _make_test_case(n, k, p)
-        cpu_result = testmod.cpu_mvnpdf(data, params, k)
+        data, means, covs, result = _make_test_case(n, k, p)
+        pdata, pparams = prep_inputs(data, means, covs)
+        cpu_result = testmod.cpu_mvnpdf(pdata, pparams, k)
         self.assert_((np.abs(cpu_result - result) < TOL).all())
 
     def _check_gpu_case(self, n, k, p):
-        data, params, result = _make_test_case(n, k, p)
-        gpu_result = testmod._mvnpdf(data, params, k)
+        data, means, covs, result = _make_test_case(n, k, p)
+        pdata, pparams = prep_inputs(data, means, covs)
+        gpu_result = testmod.mvn_call(pdata, pparams, k)
+
         self.assert_((np.abs(gpu_result - result) < TOL).all())
 
     def test_cpu(self):

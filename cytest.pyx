@@ -25,22 +25,40 @@ def cpu_mvnpdf(ndarray packed_data, ndarray packed_params, int dim):
 
     return output
 
-def mvnpdf(ndarray data, means, chol_sigmas, logdets):
-    cdef ndarray output, packed_params, packed_data
-    n, k = (<object> data).shape
-    j = len(means)
+def mvnpdf(data, means, chol_sigmas, logdets):
+    '''
 
+    Parameters
+    ----------
+
+    Returns
+    -------
+
+    '''
+
+    n, k = data.shape
+    j = len(means)
     packed_params = util.pack_params(means, chol_sigmas, logdets)
     packed_data = util.pack_data(data)
-    return _mvnpdf(packed_data, packed_params, k)
+    return mvn_call(packed_data, packed_params, k)
 
-def _mvnpdf(ndarray packed_data, ndarray packed_params, int dim):
+def mvn_call(ndarray packed_data, ndarray packed_params, int dim):
+    '''
+    Invoke MVN kernel on prepared data
+
+    Releases GIL
+    '''
+    cdef int n, k, pn, pk
+
     n, k = (<object> packed_data).shape
     pn, pk = (<object> packed_params).shape
+
     cdef ndarray output = np.empty((n, pn), np.float32, order='F')
-    gps.mvnpdf(<float*> packed_data.data,
-                <float*> packed_params.data,
-                <float*> output.data,
-                dim, n, pn, pk, k)
+
+    with nogil:
+        gps.mvnpdf(<float*> packed_data.data,
+                    <float*> packed_params.data,
+                    <float*> output.data,
+                   dim, n, pn, pk, k)
 
     return output

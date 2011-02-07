@@ -46,7 +46,7 @@ def bench(cpu_func, gpu_func, gruns=50):
 if __name__ == '__main__':
     testmod.set_device(0)
 
-    n = 1e5
+    n = 1e3
     k = 16
 
     data = randn(n, k).astype(np.float32)
@@ -74,4 +74,4 @@ if __name__ == '__main__':
     print cpu_func()
     print gpu_func()
 
-    bench(cpu_func, gpu_func, gruns=50)
+    # bench(cpu_func, gpu_func, gruns=50)
