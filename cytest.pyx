@@ -4,8 +4,6 @@ import numpy as np
 
 cimport gpustats as gps
 
-import util
-
 def set_device(device):
     '''
     Set the CUDA device
@@ -18,29 +16,12 @@ def cpu_mvnpdf(ndarray packed_data, ndarray packed_params, int dim):
     padded_dim = (<object> packed_data).shape[1]
 
     cdef ndarray output = np.empty((n, j), dtype=np.float32)
-    gps.cpu_mvnormpdf(<float*> packed_data.data,
-                       <float*> packed_params.data,
-                       <float*> output.data,
-                       dim, padded_dim, n, j)
+    gps.cpu_mvnpdf(<float*> packed_data.data,
+                    <float*> packed_params.data,
+                    <float*> output.data,
+                    dim, padded_dim, n, j)
 
     return output
-
-def mvnpdf(data, means, chol_sigmas, logdets):
-    '''
-
-    Parameters
-    ----------
-
-    Returns
-    -------
-
-    '''
-
-    n, k = data.shape
-    j = len(means)
-    packed_params = util.pack_params(means, chol_sigmas, logdets)
-    packed_data = util.pack_data(data)
-    return mvn_call(packed_data, packed_params, k)
 
 def mvn_call(ndarray packed_data, ndarray packed_params, int dim):
     '''

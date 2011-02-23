@@ -83,6 +83,9 @@ libgpustats.so: makedirs $(OBJS)
 runpy: cython
 	LD_LIBRARY_PATH=.:$(LD_LIBRARY_PATH)  python scratch.py
 
+ipython: cython
+	LD_LIBRARY_PATH=.:$(LD_LIBRARY_PATH)  ipython
+
 test: libgpustats.so
 	$(VERBOSE)$(CC) $(CC_ARCH_FLAGS) -std=c99 test.c -o test $(CUDA_INC) $(LINKFLAGS)
 

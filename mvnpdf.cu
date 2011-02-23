@@ -86,11 +86,10 @@ int next_multiple(int k, int mult) {
 }
 
 __device__ float compute_pdf(float* data, float* params, int dim) {
-  unsigned int LOGDET_OFFSET = dim * (dim + 3) / 2;
   float* mean = params;
   float* sigma = params + dim;
-  float mult = params[LOGDET_OFFSET];
-  float logdet = params[LOGDET_OFFSET + 1];
+  float mult = params[dim * (dim + 3) / 2];
+  float logdet = params[dim * (dim + 3) / 2 + 1];
 
   float discrim = 0;
   float sum;
@@ -230,8 +229,8 @@ void mvnpdf(float* h_data, /** Data-vector; padded */
   cudaFree(d_pdf);
 }
 
-void cpu_mvnormpdf(float* x, float* density, float * output, int dim, int padded_dim,
-                   int N, int T) {
+void cpu_mvnpdf(float* x, float* density, float * output, int dim,
+                int padded_dim, int N, int T) {
     int LOGDET_OFFSET = dim * (dim + 3) / 2;
     int MEAN_CHD_DIM = dim * (dim + 3) / 2  + 2;
 

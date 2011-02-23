@@ -59,7 +59,6 @@ if __name__ == '__main__':
 
     chol_sigma = chol(cov)
     ichol_sigma = L.inv(chol_sigma)
-
     logdet = np.log(np.linalg.det(cov))
 
     means = (mean,) * j

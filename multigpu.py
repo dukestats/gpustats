@@ -7,13 +7,20 @@ class GPUCall(Thread):
 
     """
 
-    def __init__(self, func, int device=0):
+    def __init__(self, func, device=0):
         self.func = func
         self.device = device
 
-    def run(self):
+    def acquire_device(self):
         testmod.set_device(self.device)
+
+    def release_device(self):
+        pass
+
+    def run(self):
+        self.acquire_device()
         self.func()
+        self.release_device()
 
 def make_calls(func, data, devices=None, splits=None):
     """
