@@ -1,6 +1,20 @@
 import numpy as np
 import pymc.distributions as pymc_dist
 
+
+_dev_attr = drv.device_attribute
+
+class DeviceInfo(object):
+
+    def __init__(self, dev=0):
+        self.dev = dev
+        self._dev = drv.Device(dev)
+        self._attr = self._dev.get_attributes()
+
+        self.max_block_threads = self._attr[_dev_attr.MAX_THREADS_PER_BLOCK]
+        self.shared_mem = self._attr[_dev_attr.MAX_SHARED_MEMORY_PER_BLOCK]
+        self.warp_size = self._attr[_dev_attr.WARP_SIZE]
+
 PAD_MULTIPLE = 16
 HALF_WARP = 16
 
@@ -53,30 +67,3 @@ def prep_ndarray(arr):
         arr = np.array(arr, dtype=np.float32)
 
     return arr
-
-def pack_params(means, chol_sigmas, logdets):
-    to_pack = []
-    for m, ch, ld in zip(means, chol_sigmas, logdets):
-        to_pack.append(pack_pdf_params(m, ch, ld))
-
-    return np.vstack(to_pack)
-
-def pack_pdf_params(mean, chol_sigma, logdet):
-    '''
-
-
-    '''
-    k = len(mean)
-    mean_len = k
-    chol_len = k * (k + 1) / 2
-    mch_len = mean_len + chol_len
-
-    packed_dim = next_multiple(mch_len + 2, PAD_MULTIPLE)
-
-    packed_params = np.empty(packed_dim, dtype=np.float32)
-    packed_params[:mean_len] = mean
-
-    packed_params[mean_len:mch_len] = chol_sigma[np.tril_indices(k)]
-    packed_params[mch_len:mch_len + 2] = 1, logdet
-
-    return packed_params
