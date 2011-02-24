@@ -74,20 +74,6 @@ def mvnpdf_multi(data, means, covs, logged=True):
 
     return dest
 
-def python_mvnpdf(data, means, covs, k):
-    import pymc.distributions as pymc_dist
-    actual_data = data[:, :k]
-
-    pdf_func = pymc_dist.mv_normal_cov_like
-
-    results = []
-    for i, datum in enumerate(actual_data):
-        for j, cov in enumerate(covs):
-            mean = means[j]
-            results.append(pdf_func(datum, mean, cov))
-
-    return np.array(results).reshape((len(data), len(covs)))
-
 def _pack_mvnpdf_params(means, ichol_sigmas, logdets):
     to_pack = []
     for m, ch, ld in zip(means, ichol_sigmas, logdets):
@@ -113,6 +99,8 @@ def _pack_mvnpdf_params_single(mean, ichol_sigma, logdet):
     return packed_params
 
 if __name__ == '__main__':
+    import gpustats.compat as compat
+
     n = 1e5
     k = 8
 
@@ -122,6 +110,6 @@ if __name__ == '__main__':
     cov = util.random_cov(k).astype(np.float32)
 
     result = mvnpdf(data, mean, cov)
-    pyresult = python_mvnpdf(data, [mean], [cov], 8).squeeze()
+    pyresult = compat.python_mvnpdf(data, [mean], [cov], 8).squeeze()
 
     print result - pyresult
