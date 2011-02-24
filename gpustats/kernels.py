@@ -34,7 +34,7 @@ __device__ float %(name)s(float* x, float* params) {
 
   // standardize
   float xstd = (*x - params[0]) / std;
-  return - xstd * xstd / 2 - 0.5 * LOG_2_PI - log(std);
+  return - (xstd * xstd) / 2 - 0.5 * LOG_2_PI - log(std);
 }
 """
 log_pdf_normal = DensityKernel('log_pdf_normal', _log_pdf_normal)

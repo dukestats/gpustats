@@ -28,6 +28,7 @@ __global__ void k_%(name)s(float* output,
 
   unsigned int obs_num = data_per_block * blockIdx.x + rel_data;
   unsigned int param_num = params_per_block * blockIdx.y + rel_param;
+  unsigned int result_idx = nobs * param_num + obs_num;
 
   // set up shared data
   extern __shared__ float shared_data[];
@@ -53,10 +54,11 @@ __global__ void k_%(name)s(float* output,
                             sh_params + rel_param * params_stride);
   __syncthreads();
 
-  unsigned int result_idx = nobs * param_num + obs_num;
-
   // output is column-major, so this will then coalesce
   if (obs_num < nobs & param_num < nparams) {
+	output[result_idx] = obs_num;
     output[result_idx] = sh_result[tid];
   }
 }
+
+//f oo

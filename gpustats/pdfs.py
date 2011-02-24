@@ -41,7 +41,10 @@ def _multivariate_pdf_call(cu_func, data, packed_params):
                        packed_params.shape), # params spec
                       dtype=np.float32)
 
-    dest = np.zeros((ndata, nparams), dtype=np.float32, order='F')
+    if nparams == 1:
+        dest = np.zeros(ndata, dtype=np.float32)
+    else:
+        dest = np.zeros((ndata, nparams), dtype=np.float32, order='F')
 
     cu_func(drv.Out(dest),
             drv.In(padded_data), drv.In(packed_params), drv.In(design),
@@ -52,6 +55,8 @@ def _multivariate_pdf_call(cu_func, data, packed_params):
 def _univariate_pdf_call(cu_func, data, packed_params):
     ndata = len(data)
     nparams = len(packed_params)
+
+    data = util.prep_ndarray(data)
 
     data_per, params_per = util.tune_blocksize(data, packed_params)
 
@@ -68,7 +73,10 @@ def _univariate_pdf_call(cu_func, data, packed_params):
                        packed_params.shape), # params spec
                       dtype=np.float32)
 
-    dest = np.zeros((ndata, nparams), dtype=np.float32, order='F')
+    if nparams == 1:
+        dest = np.zeros(ndata, dtype=np.float32)
+    else:
+        dest = np.zeros((ndata, nparams), dtype=np.float32, order='F')
 
     cu_func(drv.Out(dest),
             drv.In(data), drv.In(packed_params), drv.In(design),
@@ -79,7 +87,7 @@ def _univariate_pdf_call(cu_func, data, packed_params):
 #-------------------------------------------------------------------------------
 # Multivariate normal
 
-def mvnpdf(data, mean, cov, logged=True):
+def mvnpdf(data, mean, cov, weight=None, logged=True):
     """
     Multivariate normal density
 
@@ -89,9 +97,9 @@ def mvnpdf(data, mean, cov, logged=True):
     Returns
     -------
     """
-    return mvnpdf_multi(data, [mean], [cov]).squeeze()
+    return mvnpdf_multi(data, [mean], [cov])
 
-def mvnpdf_multi(data, means, covs, logged=True):
+def mvnpdf_multi(data, means, covs, weights=None, logged=True):
     """
     Multivariate normal density with multiple sets of parameters
 
@@ -100,6 +108,7 @@ def mvnpdf_multi(data, means, covs, logged=True):
     data : ndarray (n x k)
     covs : sequence of 2d k x k matrices (length j)
     weights : ndarray (length j)
+        Multiplier for component j, usually will sum to 1
 
     Returns
     -------
@@ -113,9 +122,9 @@ def mvnpdf_multi(data, means, covs, logged=True):
     ichol_sigmas = [LA.inv(chol(c)) for c in covs]
     logdets = [np.log(LA.det(c)) for c in covs]
 
-    padded_params = _pack_mvnpdf_params(means, ichol_sigmas, logdets)
+    packed_params = _pack_mvnpdf_params(means, ichol_sigmas, logdets)
 
-    return _multivariate_pdf_call(cu_func, data, padded_params)
+    return _multivariate_pdf_call(cu_func, data, packed_params)
 
 def _pack_mvnpdf_params(means, ichol_sigmas, logdets):
     to_pack = []
@@ -145,12 +154,22 @@ def _pack_mvnpdf_params_single(mean, ichol_sigma, logdet):
 # Univariate normal
 
 def normpdf(x, mean, std, logged=True):
-    if logged:
-        cuda_func = cu_module.get_function('log_pdf_normal')
-    else:
-        cuda_func = cu_module.get_function('pdf_normal')
+    """
+    Normal (Gaussian) density
 
-    pass
+    Parameters
+    ----------
+
+    Returns
+    -------
+    """
+    if logged:
+        cu_func = cu_module.get_function('log_pdf_normal')
+    else:
+        cu_func = cu_module.get_function('pdf_normal')
+
+    packed_params = np.array([[mean, std]], dtype=np.float32)
+    return _univariate_pdf_call(cu_func, x, packed_params)
 
 if __name__ == '__main__':
     import gpustats.compat as compat
