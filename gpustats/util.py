@@ -129,8 +129,12 @@ def get_boxes(n, box_size):
 
 def compute_shmem(data, params, data_per, params_per):
     result_space = data_per * params_per
-    param_space = params.shape[1] * params_per
-    data_space = data.shape[1] * data_per
+
+    data_dim = 1 if data.ndim == 1 else data.shape[1]
+    params_dim = params.shape[1]
+
+    param_space = params_dim * params_per
+    data_space = data_dim * data_per
     return 4 * (result_space + param_space + data_space)
 
 def _next_pow2(k, pow2):

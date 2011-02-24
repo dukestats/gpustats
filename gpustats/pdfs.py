@@ -14,6 +14,71 @@ from pandas.util.testing import set_trace as st
 
 cu_module = codegen.get_full_cuda_module()
 
+#-------------------------------------------------------------------------------
+# Invokers for univariate and multivariate density functions conforming to the
+# standard API
+
+def _multivariate_pdf_call(cu_func, data, packed_params):
+    padded_data = util.pad_data(data)
+
+    ndata, dim = data.shape
+
+    nparams = len(packed_params)
+    data_per, params_per = util.tune_blocksize(padded_data,
+                                               packed_params)
+
+    shared_mem = util.compute_shmem(padded_data, packed_params,
+                                    data_per, params_per)
+
+    block_design = (data_per * params_per, 1, 1)
+    grid_design = (util.get_boxes(ndata, data_per),
+                   util.get_boxes(nparams, params_per))
+
+    # see cufiles/mvcaller.cu
+    design = np.array(((data_per, params_per) + # block design
+                       padded_data.shape + # data spec
+                       (dim,) + # non-padded number of data columns
+                       packed_params.shape), # params spec
+                      dtype=np.float32)
+
+    dest = np.zeros((ndata, nparams), dtype=np.float32, order='F')
+
+    cu_func(drv.Out(dest),
+            drv.In(padded_data), drv.In(packed_params), drv.In(design),
+            block=block_design, grid=grid_design, shared=shared_mem)
+
+    return dest
+
+def _univariate_pdf_call(cu_func, data, packed_params):
+    ndata = len(data)
+    nparams = len(packed_params)
+
+    data_per, params_per = util.tune_blocksize(data, packed_params)
+
+    shared_mem = util.compute_shmem(data, packed_params,
+                                    data_per, params_per)
+
+    block_design = (data_per * params_per, 1, 1)
+    grid_design = (util.get_boxes(ndata, data_per),
+                   util.get_boxes(nparams, params_per))
+
+    # see cufiles/univcaller.cu
+    design = np.array(((data_per, params_per) + # block design
+                       (len(data),) +
+                       packed_params.shape), # params spec
+                      dtype=np.float32)
+
+    dest = np.zeros((ndata, nparams), dtype=np.float32, order='F')
+
+    cu_func(drv.Out(dest),
+            drv.In(data), drv.In(packed_params), drv.In(design),
+            block=block_design, grid=grid_design, shared=shared_mem)
+
+    return dest
+
+#-------------------------------------------------------------------------------
+# Multivariate normal
+
 def mvnpdf(data, mean, cov, logged=True):
     """
     Multivariate normal density
@@ -41,42 +106,16 @@ def mvnpdf_multi(data, means, covs, logged=True):
     densities : n x j
     """
     if logged:
-        cuda_func = cu_module.get_function('log_pdf_mvnormal')
+        cu_func = cu_module.get_function('log_pdf_mvnormal')
     else:
-        cuda_func = cu_module.get_function('pdf_mvnormal')
+        cu_func = cu_module.get_function('pdf_mvnormal')
 
     ichol_sigmas = [LA.inv(chol(c)) for c in covs]
     logdets = [np.log(LA.det(c)) for c in covs]
 
-    padded_data = util.pad_data(data)
     padded_params = _pack_mvnpdf_params(means, ichol_sigmas, logdets)
 
-    ndata, dim = data.shape
-
-    nparams = len(covs)
-    data_per, params_per = util.tune_blocksize(padded_data,
-                                               padded_params)
-
-    shared_mem = util.compute_shmem(padded_data, padded_params,
-                                    data_per, params_per)
-
-    block_design = (data_per * params_per, 1, 1)
-    grid_design = (util.get_boxes(ndata, data_per),
-                   util.get_boxes(nparams, params_per))
-
-    design = np.array(((data_per, params_per) + # block design
-                       padded_data.shape + # data spec
-                       (dim,) + # non-padded number of data columns
-                       padded_params.shape), # params spec
-                      dtype=np.float32)
-
-    dest = np.zeros((ndata, nparams), dtype=np.float32, order='F')
-
-    cuda_func(drv.Out(dest),
-              drv.In(padded_data), drv.In(padded_params), drv.In(design),
-              block=block_design, grid=grid_design, shared=shared_mem)
-
-    return dest
+    return _multivariate_pdf_call(cu_func, data, padded_params)
 
 def _pack_mvnpdf_params(means, ichol_sigmas, logdets):
     to_pack = []
@@ -101,6 +140,17 @@ def _pack_mvnpdf_params_single(mean, ichol_sigma, logdet):
     packed_params[mch_len:mch_len + 2] = 1, logdet
 
     return packed_params
+
+#-------------------------------------------------------------------------------
+# Univariate normal
+
+def normpdf(x, mean, std, logged=True):
+    if logged:
+        cuda_func = cu_module.get_function('log_pdf_normal')
+    else:
+        cuda_func = cu_module.get_function('pdf_normal')
+
+    pass
 
 if __name__ == '__main__':
     import gpustats.compat as compat

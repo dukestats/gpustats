@@ -47,8 +47,8 @@ def _compare_single(n, k):
 
     return diff
 
-# get some 1e-4 differences from FP error...
-TOL = 1e-3
+# get some 1e-4 and rarely 1e-3 differences from FP error...
+TOL = 1e-2
 
 class TestMVN(unittest.TestCase):
     # ndata, dim, ncomponents
