@@ -12,18 +12,14 @@ __global__ void k_%(name)s(float* output,
   // Think of a more elegant, efficient way of doing this
   // use shared memory?
   unsigned int data_per_block, params_per_block;
-  unsigned int data_rows, data_stride, data_cols;
-  unsigned int params_rows, params_stride;
+  unsigned int nobs, nparams, params_stride;
 
   // inelegant, perhaps...
   data_per_block = design[0];
   params_per_block = design[1];
-  data_rows = design[2];
-  data_stride = design[3];
-  data_cols = design[4];
-  params_rows = design[5];
-  params_stride = design[6];
-  // unsigned int params_cols = design[7];
+  nobs = design[2];
+  nparams = design[3];
+  params_stride = design[4];
 
   unsigned int tid = threadIdx.y * blockDim.x + threadIdx.x;
 
@@ -37,17 +33,17 @@ __global__ void k_%(name)s(float* output,
   extern __shared__ float shared_data[];
   float* sh_params = shared_data;
   float* sh_data = sh_params + params_per_block * params_stride;
-  float* sh_result = sh_data + data_per_block * data_stride;
+  float* sh_result = sh_data + data_per_block;
 
-  copy_chunks(data + data_per_block * blockIdx.x * data_stride,
+  copy_chunks(data + data_per_block * blockIdx.x,
               sh_data, tid,
               min(data_rows - data_per_block * blockIdx.x,
-                  data_per_block) * data_stride);
+                  data_per_block));
 
   copy_chunks(params + params_per_block * blockIdx.y * params_stride,
               sh_params, tid,
               min(params_per_block,
-                  params_rows - params_per_block * blockIdx.y) * params_stride);
+                  nparams - params_per_block * blockIdx.y) * params_stride);
 
   __syncthreads();
 
@@ -61,7 +57,7 @@ __global__ void k_%(name)s(float* output,
   unsigned int result_idx = data_rows * param_num + obs_num;
 
   // output is column-major, so this will then coalesce
-  if (obs_num < data_rows & param_num < params_rows) {
+  if (obs_num < data_rows & param_num < nparams) {
     output[result_idx] = sh_result[tid];
   }
 }
