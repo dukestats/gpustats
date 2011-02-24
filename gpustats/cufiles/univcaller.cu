@@ -60,5 +60,3 @@ __global__ void k_%(name)s(float* output,
     output[result_idx] = sh_result[tid];
   }
 }
-
-//f oo

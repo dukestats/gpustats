@@ -20,6 +20,7 @@ cu_module = codegen.get_full_cuda_module()
 
 def _multivariate_pdf_call(cu_func, data, packed_params):
     padded_data = util.pad_data(data)
+    packed_params = util.prep_ndarray(packed_params)
 
     ndata, dim = data.shape
 
@@ -57,6 +58,7 @@ def _univariate_pdf_call(cu_func, data, packed_params):
     nparams = len(packed_params)
 
     data = util.prep_ndarray(data)
+    packed_params = util.prep_ndarray(packed_params)
 
     data_per, params_per = util.tune_blocksize(data, packed_params)
 
@@ -163,12 +165,15 @@ def normpdf(x, mean, std, logged=True):
     Returns
     -------
     """
+    return normpdf_multi(x, [mean], [std], logged=logged)
+
+def normpdf_multi(x, means, std, logged=True):
     if logged:
         cu_func = cu_module.get_function('log_pdf_normal')
     else:
         cu_func = cu_module.get_function('pdf_normal')
 
-    packed_params = np.array([[mean, std]], dtype=np.float32)
+    packed_params = np.c_[means, std]
     return _univariate_pdf_call(cu_func, x, packed_params)
 
 if __name__ == '__main__':

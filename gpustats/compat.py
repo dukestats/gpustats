@@ -13,4 +13,4 @@ def python_mvnpdf(data, means, covs):
             mean = means[j]
             results.append(pdf_func(datum, mean, cov))
 
-    return np.array(results).reshape((len(data), len(covs)))
+    return np.array(results).reshape((len(data), len(covs))).squeeze()

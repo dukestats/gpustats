@@ -4,13 +4,22 @@ import unittest
 
 from numpy.random import randn
 from numpy.linalg import inv, cholesky as chol
+from numpy.testing import assert_almost_equal, assert_equal
 import numpy as np
+
+import scipy.stats as sp_stats
 
 import gpustats.pdfs as pdfs
 import gpustats.compat as compat
 import gpustats.util as util
 
 from pandas.util.testing import debug
+
+DECIMAL_6 = 6
+DECIMAL_5 = 5
+DECIMAL_4 = 4
+DECIMAL_3 = 3
+DECIMAL_2 = 2
 
 def _make_test_case(n=1000, k=4, p=1):
     data = randn(n, k)
@@ -29,9 +38,7 @@ def _compare_multi(n, k, p):
     # gpu
     result = pdfs.mvnpdf_multi(data, means, covs)
 
-    diff = result - pyresult
-
-    return diff
+    return result, pyresult
 
 def _compare_single(n, k):
     data, means, covs = _make_test_case(n, k, 1)
@@ -43,12 +50,7 @@ def _compare_single(n, k):
     pyresult = compat.python_mvnpdf(data, [mean], [cov]).squeeze()
     # gpu
     result = pdfs.mvnpdf(data, mean, cov)
-    diff = result - pyresult
-
-    return diff
-
-# get some 1e-4 and rarely 1e-3 differences from FP error...
-TOL = 1e-2
+    return result, pyresult
 
 class TestMVN(unittest.TestCase):
     # ndata, dim, ncomponents
@@ -64,12 +66,12 @@ class TestMVN(unittest.TestCase):
                   (10, 15, 2)]
 
     def _check_multi(self, n, k, p):
-        diff = _compare_multi(n, k, p)
-        self.assert_((np.abs(diff) < TOL).all())
+        a, b = _compare_multi(n, k, p)
+        assert_almost_equal(a, b, DECIMAL_2)
 
     def _check_single(self, n, k):
-        diff = _compare_single(n, k)
-        self.assert_((np.abs(diff) < TOL).all())
+        a, b = _compare_single(n, k)
+        assert_almost_equal(a, b, DECIMAL_2)
 
     def test_multi(self):
         for n, k, p in self.test_cases:
@@ -78,6 +80,23 @@ class TestMVN(unittest.TestCase):
     def test_single(self):
         for n, k, p in self.test_cases:
             self._check_single(n, k)
+
+class TestUnivariate(unittest.TestCase):
+
+    def test_normal(self):
+        test_cases = [
+            (100, 0, 1),
+            (100, .5, 2.5),
+            (10, 5, 3),
+            (2000, 1, 4)
+        ]
+
+        for n, mean, std in test_cases:
+            data = randn(n)
+            pyresult = sp_stats.norm.pdf(data, loc=mean, scale=std)
+
+            result = pdfs.normpdf(data, mean, std, logged=True)
+            assert_almost_equal(result, np.log(pyresult), DECIMAL_5)
 
 if __name__ == '__main__':
     # nose.runmodule(argv=['', '--pdb', '-v', '--pdb-failure'])
