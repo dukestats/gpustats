@@ -37,7 +37,7 @@ __global__ void k_%(name)s(float* output,
 
   copy_chunks(data + data_per_block * blockIdx.x,
               sh_data, tid,
-              min(data_rows - data_per_block * blockIdx.x,
+              min(nobs - data_per_block * blockIdx.x,
                   data_per_block));
 
   copy_chunks(params + params_per_block * blockIdx.y * params_stride,
@@ -49,15 +49,14 @@ __global__ void k_%(name)s(float* output,
 
   // allocated enough shared memory so that this will not walk out of bounds
   // no matter what, though some of the results will be garbage
-  sh_result[tid] = %(name)s(sh_data + rel_data * data_stride,
-                            sh_params + rel_param * params_stride,
-                            data_cols);
+  sh_result[tid] = %(name)s(sh_data + rel_data,
+                            sh_params + rel_param * params_stride);
   __syncthreads();
 
-  unsigned int result_idx = data_rows * param_num + obs_num;
+  unsigned int result_idx = nobs * param_num + obs_num;
 
   // output is column-major, so this will then coalesce
-  if (obs_num < data_rows & param_num < nparams) {
+  if (obs_num < nobs & param_num < nparams) {
     output[result_idx] = sh_result[tid];
   }
 }

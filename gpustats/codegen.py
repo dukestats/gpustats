@@ -60,9 +60,10 @@ class DensityKernel(Kernel):
 
     def get_code(self):
         caller_code = self._caller
+        formatted_logic = self.logic_code % {'name' : self.name}
         formatted_caller = caller_code % {'name' : self.name}
 
-        code = '\n\n'.join((self.logic_code, formatted_caller))
+        code = '\n\n'.join((formatted_logic, formatted_caller))
 
         return code
 
@@ -77,7 +78,8 @@ class Transform(object):
     Enable simple transforms of kernels
     """
 
-    def __init__(self, kernel):
+    def __init__(self, name, kernel):
+        self.name = name
         self.kernel = kernel
 
 class Exp(Transform):

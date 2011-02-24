@@ -26,10 +26,11 @@ __device__ float %(name)s(float* data, float* params, int dim) {
 log_pdf_mvnormal = MVDensityKernel('log_pdf_mvnormal', _log_pdf_mvnormal)
 pdf_mvnormal = Exp('pdf_mvnormal', log_pdf_mvnormal)
 
-log_pdf_normal = """
+
+_log_pdf_normal = """
 __device__ float %(name)s(float* x, float* params) {
   // mean stored in params[0]
-  float std = params[1]
+  float std = params[1];
 
   // standardize
   float xstd = (*x - params[0]) / std;
