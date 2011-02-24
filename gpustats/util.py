@@ -2,6 +2,8 @@ import numpy as np
 import pymc.distributions as pymc_dist
 import pycuda.driver as drv
 
+from pandas.util.testing import set_trace as st
+
 _dev_attr = drv.device_attribute
 
 class DeviceInfo(object):
@@ -112,7 +114,7 @@ def tune_blocksize(data, params, device=0):
         else:
             break
 
-    while _can_fit(data_per, params_per):
+    while _can_fit(2 * data_per, params_per):
         if 2 * data_per * params_per < max_threads:
             data_per *= 2
         else:

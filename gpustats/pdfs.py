@@ -10,6 +10,8 @@ reload(kernels)
 import gpustats.util as util
 import pycuda.driver as drv
 
+from pandas.util.testing import set_trace as st
+
 cu_module = codegen.get_full_cuda_module()
 
 def mvnpdf(data, mean, cov, logged=True):
@@ -39,9 +41,9 @@ def mvnpdf_multi(data, means, covs, logged=True):
     densities : n x j
     """
     if logged:
-        f = cu_module.get_function('log_pdf_mvnormal')
+        cuda_func = cu_module.get_function('log_pdf_mvnormal')
     else:
-        f = cu_module.get_function('pdf_mvnormal')
+        cuda_func = cu_module.get_function('pdf_mvnormal')
 
     ichol_sigmas = [LA.inv(chol(c)) for c in covs]
     logdets = [np.log(LA.det(c)) for c in covs]
@@ -49,7 +51,9 @@ def mvnpdf_multi(data, means, covs, logged=True):
     padded_data = util.pad_data(data)
     padded_params = _pack_mvnpdf_params(means, ichol_sigmas, logdets)
 
-    ndata, nparams = len(data), len(covs)
+    ndata, dim = data.shape
+
+    nparams = len(covs)
     data_per, params_per = util.tune_blocksize(padded_data,
                                                padded_params)
 
@@ -60,17 +64,17 @@ def mvnpdf_multi(data, means, covs, logged=True):
     grid_design = (util.get_boxes(ndata, data_per),
                    util.get_boxes(nparams, params_per))
 
-    design = np.array(((data_per, params_per) +
-                       padded_data.shape +
-                       (k,) +
-                       padded_params.shape),
+    design = np.array(((data_per, params_per) + # block design
+                       padded_data.shape + # data spec
+                       (dim,) + # non-padded number of data columns
+                       padded_params.shape), # params spec
                       dtype=np.float32)
 
     dest = np.zeros((ndata, nparams), dtype=np.float32, order='F')
 
-    f(drv.Out(dest), drv.In(padded_data), drv.In(padded_params),
-      drv.In(design),
-      block=block_design, grid=grid_design, shared=shared_mem)
+    cuda_func(drv.Out(dest),
+              drv.In(padded_data), drv.In(padded_params), drv.In(design),
+              block=block_design, grid=grid_design, shared=shared_mem)
 
     return dest
 

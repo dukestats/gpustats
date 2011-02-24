@@ -1,28 +1,53 @@
 import nose
+import sys
 import unittest
 
 from numpy.random import randn
 from numpy.linalg import inv, cholesky as chol
 import numpy as np
-import pymc.distributions as pymc_dist
 
-import util
-import testmod
+import gpustats.pdfs as pdfs
+import gpustats.compat as compat
+import gpustats.util as util
+
+from pandas.util.testing import debug
 
 def _make_test_case(n=1000, k=4, p=1):
     data = randn(n, k)
     covs = [util.random_cov(k) for _ in range(p)]
-    means = (data.mean(0),) * p
-    python_result = python_mvnpdf(data, means, covs, k)
-    return data, means, covs, python_result
+    means = [randn(k) for _ in range(p)]
+    return data, means, covs
 
-def prep_inputs(data, means, covs):
-    prepped_data = util.pad_data(data)
-    ichols = [inv(chol(c)) for c in covs]
-    logdets = [np.log(np.linalg.det(c)) for c in covs]
-    prepped_params = util.pack_params(means, ichols, logdets)
-    return prepped_data, prepped_params
+# debugging...
 
+def _compare_multi(n, k, p):
+    data, means, covs = _make_test_case(n, k, p)
+
+    # cpu in PyMC
+    pyresult = compat.python_mvnpdf(data, means, covs)
+
+    # gpu
+    result = pdfs.mvnpdf_multi(data, means, covs)
+
+    diff = result - pyresult
+
+    return diff
+
+def _compare_single(n, k):
+    data, means, covs = _make_test_case(n, k, 1)
+
+    mean = means[0]
+    cov = covs[0]
+
+    # cpu in PyMC
+    pyresult = compat.python_mvnpdf(data, [mean], [cov]).squeeze()
+    # gpu
+    result = pdfs.mvnpdf(data, mean, cov)
+    diff = result - pyresult
+
+    return diff
+
+# get some 1e-4 differences from FP error...
 TOL = 1e-3
 
 class TestMVN(unittest.TestCase):
@@ -38,26 +63,22 @@ class TestMVN(unittest.TestCase):
                   (250, 25, 32),
                   (10, 15, 2)]
 
-    def _check_cpu_case(self, n, k, p):
-        data, means, covs, result = _make_test_case(n, k, p)
-        pdata, pparams = prep_inputs(data, means, covs)
-        cpu_result = testmod.cpu_mvnpdf(pdata, pparams, k)
-        self.assert_((np.abs(cpu_result - result) < TOL).all())
+    def _check_multi(self, n, k, p):
+        diff = _compare_multi(n, k, p)
+        self.assert_((np.abs(diff) < TOL).all())
 
-    def _check_gpu_case(self, n, k, p):
-        data, means, covs, result = _make_test_case(n, k, p)
-        pdata, pparams = prep_inputs(data, means, covs)
-        gpu_result = testmod.mvn_call(pdata, pparams, k)
+    def _check_single(self, n, k):
+        diff = _compare_single(n, k)
+        self.assert_((np.abs(diff) < TOL).all())
 
-        self.assert_((np.abs(gpu_result - result) < TOL).all())
-
-    def test_cpu(self):
+    def test_multi(self):
         for n, k, p in self.test_cases:
-            self._check_cpu_case(n, k, p)
+            self._check_multi(n, k, p)
 
-    def test_gpu(self):
+    def test_single(self):
         for n, k, p in self.test_cases:
-            self._check_gpu_case(n, k, p)
+            self._check_single(n, k)
 
 if __name__ == '__main__':
-    nose.runmodule(argv=['', '--pdb', '-v', '--pdb-failure'])
+    # nose.runmodule(argv=['', '--pdb', '-v', '--pdb-failure'])
+    pass
