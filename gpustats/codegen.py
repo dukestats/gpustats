@@ -42,7 +42,8 @@ def _get_univcaller_code():
 
 def _get_cuda_code_path():
     import os.path as pth
-    return pth.abspath(pth.split(__file__)[0])
+    basepath = pth.abspath(pth.split(__file__)[0])
+    return pth.join(basepath, 'cufiles')
 
 class Kernel(object):
     pass

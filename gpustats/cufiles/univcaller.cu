@@ -5,9 +5,9 @@
  */
 
 __global__ void k_%(name)s(float* output,
-						   float* data,
-						   float* params,
-						   float* design) {
+                           float* data,
+                           float* params,
+                           float* design) {
 
   // Think of a more elegant, efficient way of doing this
   // use shared memory?
@@ -50,8 +50,8 @@ __global__ void k_%(name)s(float* output,
   // allocated enough shared memory so that this will not walk out of bounds
   // no matter what, though some of the results will be garbage
   sh_result[tid] = %(name)s(sh_data + rel_data * data_stride,
-							sh_params + rel_param * params_stride,
-							data_cols);
+                            sh_params + rel_param * params_stride,
+                            data_cols);
   __syncthreads();
 
   unsigned int result_idx = data_rows * param_num + obs_num;
