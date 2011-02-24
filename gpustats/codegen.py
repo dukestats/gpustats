@@ -44,7 +44,10 @@ def _get_cuda_code_path():
     import os.path as pth
     return pth.abspath(pth.split(__file__)[0])
 
-class DensityKernel(object):
+class Kernel(object):
+    pass
+
+class DensityKernel(Kernel):
     """
     Generate kernel for probability density function
     """
@@ -68,14 +71,31 @@ class MVDensityKernel(DensityKernel):
     """
     _caller = _get_mvcaller_code()
 
-# right place for registry?
+class Transform(object):
+    """
+    Enable simple transforms of kernels
+    """
 
-kernel_registry = {
-    'pdf_mvnormal' : kernels.pdf_mvnormal
-}
+    def __init__(self, kernel):
+        self.kernel = kernel
+
+class Exp(Transform):
+    pass
+
+class Log(Transform):
+    pass
+
+class Sqrt(Transform):
+    pass
 
 def get_full_cuda_module():
-    return CUDAModule(kernel_registry)
+    import gpustats.kernels as kernels
+    objects = kernels.__dict__
+
+    all_kernels = dict((k, v)
+                       for k, v in kernels.__dict__.iteritems()
+                       if isinstance(v, Kernel))
+    return CUDAModule(all_kernels)
 
 if __name__ == '__main__':
     pass
