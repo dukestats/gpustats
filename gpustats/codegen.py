@@ -6,6 +6,8 @@ import numpy.linalg as la
 import os
 from pycuda.compiler import SourceModule
 
+from pandas.util.testing import set_trace as st
+
 class CUDAModule(object):
     """
     Interfaces with PyCUDA
@@ -17,11 +19,27 @@ class CUDAModule(object):
     def __init__(self, kernel_dict):
         self.kernel_dict = kernel_dict
         self.support_code = _get_support_code()
-        self.pycuda_module = SourceModule(self._get_full_source())
+
+        all_code = self._get_full_source()
+        try:
+            self.pycuda_module = SourceModule(all_code)
+        except Exception:
+            f = open('foo.cu', 'w')
+            print >> f, all_code
+            f.close()
+            raise
 
     def _get_full_source(self):
-        kernel_code = [v.get_code() for v in self.kernel_dict.values()]
-        return '\n\n'.join([self.support_code] + kernel_code)
+        formatted_kernels = []
+
+        for name, kernel in self.kernel_dict.iteritems():
+            logic = kernel.get_logic()
+            caller = kernel.get_caller()
+            complete_code = '\n'.join((logic, caller))
+
+            formatted_kernels.append(complete_code)
+
+        return '\n'.join([self.support_code] + formatted_kernels)
 
     def get_function(self, name):
         return self.pycuda_module.get_function('k_%s' % name)
@@ -46,7 +64,19 @@ def _get_cuda_code_path():
     return pth.join(basepath, 'cufiles')
 
 class Kernel(object):
-    pass
+
+    def __init__(self, name):
+        if name is None:
+            raise ValueError('Kernel must have a default name')
+
+        self.name = name
+
+    def get_name(self, name=None):
+        # can override default name, for transforms. this a hack?
+        if name is None:
+            name = self.name
+
+        return name
 
 class DensityKernel(Kernel):
     """
@@ -55,17 +85,16 @@ class DensityKernel(Kernel):
 
     _caller = _get_univcaller_code()
     def __init__(self, name, logic_code):
-        self.name = name
+
         self.logic_code = logic_code
 
-    def get_code(self):
-        caller_code = self._caller
-        formatted_logic = self.logic_code % {'name' : self.name}
-        formatted_caller = caller_code % {'name' : self.name}
+        Kernel.__init__(self, name)
 
-        code = '\n\n'.join((formatted_logic, formatted_caller))
+    def get_logic(self, name=None):
+        return self.logic_code % {'name' : self.get_name(name)}
 
-        return code
+    def get_caller(self, name=None):
+        return self._caller % {'name' : self.get_name(name)}
 
 class MVDensityKernel(DensityKernel):
     """
@@ -73,23 +102,63 @@ class MVDensityKernel(DensityKernel):
     """
     _caller = _get_mvcaller_code()
 
-class Transform(object):
+class Transform(Kernel):
     """
-    Enable simple transforms of kernels
+    Enable simple transforms of kernels to compute modified kernel code stub
     """
-
     def __init__(self, name, kernel):
-        self.name = name
         self.kernel = kernel
+        Kernel.__init__(self, name)
 
-class Exp(Transform):
-    pass
+    # XXX: HACK, not general for non-density kernels
+    def is_multivariate(self):
+        return isinstance(self.kernel, MVDensityKernel)
 
-class Log(Transform):
-    pass
+# flop the right name?
 
-class Sqrt(Transform):
-    pass
+class Flop(Transform):
+    op = None
+
+    def get_logic(self, name=None):
+        name = self.get_name(name)
+
+        actual_name = '%s_stub' % name
+        kernel_logic = self.kernel.get_logic(name=actual_name)
+
+        if self.is_multivariate():
+            stub_caller = _mv_stub_caller
+        else:
+            stub_caller = _univ_stub_caller
+
+        transform_logic = stub_caller % {'name' : name,
+                                         'actual_kernel' : actual_name,
+                                         'op' : self.op}
+
+        return '\n'.join((kernel_logic, transform_logic))
+
+    def get_caller(self):
+        return self.kernel.get_caller(self.name)
+
+_univ_stub_caller = """
+__device__ float %(name)s(float* x, float* params) {
+    return %(op)s(%(actual_kernel)s(x, params));
+}
+"""
+
+_mv_stub_caller = """
+__device__ float %(name)s(float* x, float* params, int dim) {
+    return %(op)s(%(actual_kernel)s(x, params, dim));
+}
+"""
+
+class Exp(Flop):
+    op = 'exp'
+
+class Log(Flop):
+    op = 'log'
+
+class Sqrt(Flop):
+    op = 'sqrt'
 
 def get_full_cuda_module():
     import gpustats.kernels as kernels

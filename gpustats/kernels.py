@@ -1,6 +1,8 @@
 from gpustats.codegen import MVDensityKernel, DensityKernel, Exp
 import gpustats.codegen as cg
 
+# TODO: check for name conflicts!
+
 _log_pdf_mvnormal = """
 __device__ float %(name)s(float* data, float* params, int dim) {
   unsigned int LOGDET_OFFSET = dim * (dim + 3) / 2;
