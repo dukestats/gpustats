@@ -6,8 +6,6 @@ import numpy.linalg as la
 import os
 from pycuda.compiler import SourceModule
 
-from pandas.util.testing import set_trace as st
-
 class CUDAModule(object):
     """
     Interfaces with PyCUDA

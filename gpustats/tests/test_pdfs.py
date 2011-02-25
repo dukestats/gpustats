@@ -13,8 +13,6 @@ import gpustats as gps
 import gpustats.compat as compat
 import gpustats.util as util
 
-from pandas.util.testing import debug
-
 DECIMAL_6 = 6
 DECIMAL_5 = 5
 DECIMAL_4 = 4

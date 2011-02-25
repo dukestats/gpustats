@@ -2,8 +2,6 @@ import numpy as np
 import pymc.distributions as pymc_dist
 import pycuda.driver as drv
 
-from pandas.util.testing import set_trace as st
-
 _dev_attr = drv.device_attribute
 
 class DeviceInfo(object):
