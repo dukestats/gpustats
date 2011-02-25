@@ -26,7 +26,15 @@ If you have `nose` installed, you may run the test suite by running:
 
 ::
 
-    nosetests gpustats
+    import gpustats
+	gpustats.test()
+
+Use
+---
+
+::
+
+    import gpustats
 
 Notes
 -----

@@ -9,7 +9,7 @@ import numpy as np
 
 import scipy.stats as sp_stats
 
-import gpustats.pdfs as pdfs
+import gpustats as gps
 import gpustats.compat as compat
 import gpustats.util as util
 
@@ -36,7 +36,7 @@ def _compare_multi(n, k, p):
     pyresult = compat.python_mvnpdf(data, means, covs)
 
     # gpu
-    result = pdfs.mvnpdf_multi(data, means, covs)
+    result = gps.mvnpdf_multi(data, means, covs)
 
     return result, pyresult
 
@@ -49,7 +49,7 @@ def _compare_single(n, k):
     # cpu in PyMC
     pyresult = compat.python_mvnpdf(data, [mean], [cov]).squeeze()
     # gpu
-    result = pdfs.mvnpdf(data, mean, cov)
+    result = gps.mvnpdf(data, mean, cov)
     return result, pyresult
 
 class TestMVN(unittest.TestCase):
@@ -95,7 +95,7 @@ class TestUnivariate(unittest.TestCase):
             data = randn(n)
             pyresult = sp_stats.norm.pdf(data, loc=mean, scale=std)
 
-            result = pdfs.normpdf(data, mean, std, logged=True)
+            result = gps.normpdf(data, mean, std, logged=True)
             assert_almost_equal(result, np.log(pyresult), DECIMAL_5)
 
 if __name__ == '__main__':

@@ -28,7 +28,7 @@ AUTHOR = "Wes McKinney"
 AUTHOR_EMAIL = "wesmckinn@gmail.com"
 URL = "https://github.com/dukestats/gpustats"
 CLASSIFIERS = [
-    'Development Status :: 3 - Alpha',
+    'Development Status :: 2 - Pre-Alpha',
     'Environment :: Console',
     'Operating System :: OS Independent',
     'Intended Audience :: Science/Research',
@@ -55,6 +55,8 @@ def configuration(parent_package='', top_path=None):
                        quiet=True)
 
     config.add_subpackage('gpustats')
+    config.add_data_dir('gpustats/tests')
+    config.add_data_dir('gpustats/cufiles')
     return config
 
 if __name__ == '__main__':

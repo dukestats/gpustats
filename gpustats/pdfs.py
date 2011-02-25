@@ -12,6 +12,8 @@ import pycuda.driver as drv
 
 from pandas.util.testing import set_trace as st
 
+__all__ = ['mvnpdf', 'mvnpdf_multi', 'normpdf', 'normpdf_multi']
+
 cu_module = codegen.get_full_cuda_module()
 
 #-------------------------------------------------------------------------------
