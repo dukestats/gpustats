@@ -30,4 +30,4 @@ If you have `nose` installed, you may run the test suite by running:
 
 Notes
 -----
-Requires workign PyCUDA installation
+Requires working PyCUDA installation

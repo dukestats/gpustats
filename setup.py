@@ -18,7 +18,7 @@ functionality:
 
 Notes
 -----
-Requires workign PyCUDA installation
+Requires working PyCUDA installation
 """
 
 REQUIRES = ['numpy', 'pycuda >= 0.94rc']
