@@ -75,10 +75,7 @@ def _univariate_pdf_call(cu_func, data, packed_params):
                        packed_params.shape), # params spec
                       dtype=np.float32)
 
-    if nparams == 1:
-        dest = np.zeros(ndata, dtype=np.float32)
-    else:
-        dest = np.zeros((ndata, nparams), dtype=np.float32, order='F')
+    dest = np.zeros((ndata, nparams), dtype=np.float32, order='F')
 
     cu_func(drv.Out(dest),
             drv.In(data), drv.In(packed_params), drv.In(design),
@@ -99,7 +96,7 @@ def mvnpdf(data, mean, cov, weight=None, logged=True):
     Returns
     -------
     """
-    return mvnpdf_multi(data, [mean], [cov])
+    return mvnpdf_multi(data, [mean], [cov]).squeeze()
 
 def mvnpdf_multi(data, means, covs, weights=None, logged=True):
     """
@@ -165,7 +162,7 @@ def normpdf(x, mean, std, logged=True):
     Returns
     -------
     """
-    return normpdf_multi(x, [mean], [std], logged=logged)
+    return normpdf_multi(x, [mean], [std], logged=logged).squeeze()
 
 def normpdf_multi(x, means, std, logged=True):
     if logged:
