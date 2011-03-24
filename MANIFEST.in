@@ -1,0 +1,9 @@
+include *.txt *.py *.rst
+include MANIFEST.in
+recursive-include gpustats/cufiles *
+
+#exclude build
+#exclude dist
+
+graft gpustats/tests
+global-exclude *~ *.swp  *.pyc *.bak
