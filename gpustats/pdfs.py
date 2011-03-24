@@ -118,21 +118,26 @@ def mvnpdf_multi(data, means, covs, weights=None, logged=True):
     else:
         cu_func = cu_module.get_function('pdf_mvnormal')
 
+    assert(len(covs) == len(means))
+
     ichol_sigmas = [LA.inv(chol(c)) for c in covs]
     logdets = [np.log(LA.det(c)) for c in covs]
 
-    packed_params = _pack_mvnpdf_params(means, ichol_sigmas, logdets)
+    if weights is None:
+        weights = np.ones(len(means))
+
+    packed_params = _pack_mvnpdf_params(means, ichol_sigmas, logdets, weights)
 
     return _multivariate_pdf_call(cu_func, data, packed_params)
 
-def _pack_mvnpdf_params(means, ichol_sigmas, logdets):
+def _pack_mvnpdf_params(means, ichol_sigmas, logdets, weights):
     to_pack = []
-    for m, ch, ld in zip(means, ichol_sigmas, logdets):
-        to_pack.append(_pack_mvnpdf_params_single(m, ch, ld))
+    for m, ch, ld, w in zip(means, ichol_sigmas, logdets, weights):
+        to_pack.append(_pack_mvnpdf_params_single(m, ch, ld, w))
 
     return np.vstack(to_pack)
 
-def _pack_mvnpdf_params_single(mean, ichol_sigma, logdet):
+def _pack_mvnpdf_params_single(mean, ichol_sigma, logdet, weight=1):
     PAD_MULTIPLE = 16
     k = len(mean)
     mean_len = k
@@ -145,7 +150,7 @@ def _pack_mvnpdf_params_single(mean, ichol_sigma, logdet):
     packed_params[:mean_len] = mean
 
     packed_params[mean_len:mch_len] = ichol_sigma[np.tril_indices(k)]
-    packed_params[mch_len:mch_len + 2] = 1, logdet
+    packed_params[mch_len:mch_len + 2] = weight, logdet
 
     return packed_params
 
@@ -184,7 +189,6 @@ if __name__ == '__main__':
     mean = randn(k).astype(np.float32)
     cov = util.random_cov(k).astype(np.float32)
 
-    result = mvnpdf(data, mean, cov)
-    pyresult = compat.python_mvnpdf(data, [mean], [cov], 8).squeeze()
-
-    print result - pyresult
+    result = mvnpdf_multi(data, [mean, mean], [cov, cov])
+    # pyresult = compat.python_mvnpdf(data, [mean], [cov]).squeeze()
+    # print result - pyresult
