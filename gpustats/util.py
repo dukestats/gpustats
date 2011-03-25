@@ -14,6 +14,7 @@ class DeviceInfo(object):
         self.max_block_threads = self._attr[_dev_attr.MAX_THREADS_PER_BLOCK]
         self.shared_mem = self._attr[_dev_attr.MAX_SHARED_MEMORY_PER_BLOCK]
         self.warp_size = self._attr[_dev_attr.WARP_SIZE]
+        self.max_registers = self._attr[_dev_attr.MAX_REGISTERS_PER_BLOCK]
 
 HALF_WARP = 16
 
@@ -62,7 +63,7 @@ def prep_ndarray(arr):
     return arr
 
 
-def tune_blocksize(data, params, device=0):
+def tune_blocksize(data, params, func_regs, device=0):
     """
     For multivariate distributions-- what's the optimal block size given the
     gpu?
@@ -81,7 +82,8 @@ def tune_blocksize(data, params, device=0):
     info = DeviceInfo(device)
 
     max_smem = info.shared_mem * 0.9
-    max_threads = info.max_block_threads
+    max_threads = int(info.max_block_threads * 0.5)
+    max_regs = info.max_registers
 
     params_per = max_threads
     if (len(params) < params_per):
@@ -90,7 +92,8 @@ def tune_blocksize(data, params, device=0):
     data_per = max_threads / params_per
 
     def _can_fit(data_per, params_per):
-        return compute_shmem(data, params, data_per, params_per) <= max_smem
+        ok = compute_shmem(data, params, data_per, params_per) <= max_smem
+        return ok and func_regs*data_per*params_per <= max_regs
 
     while True:
         while not _can_fit(data_per, params_per):

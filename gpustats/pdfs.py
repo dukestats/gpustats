@@ -22,16 +22,23 @@ def _multivariate_pdf_call(cu_func, data, packed_params):
     padded_data = util.pad_data(data)
     packed_params = util.prep_ndarray(packed_params)
 
+    func_regs = cu_func.num_regs
+
     ndata, dim = data.shape
 
     nparams = len(packed_params)
     data_per, params_per = util.tune_blocksize(padded_data,
-                                               packed_params)
+                                               packed_params,
+                                               func_regs)
+
+    blocksize = data_per * params_per
 
     shared_mem = util.compute_shmem(padded_data, packed_params,
                                     data_per, params_per)
 
+
     block_design = (data_per * params_per, 1, 1)
+
     grid_design = (util.get_boxes(ndata, data_per),
                    util.get_boxes(nparams, params_per))
 
@@ -49,7 +56,7 @@ def _multivariate_pdf_call(cu_func, data, packed_params):
 
     cu_func(drv.Out(dest),
             drv.In(padded_data), drv.In(packed_params), drv.In(design),
-            block=block_design, grid=grid_design, shared=shared_mem)
+            block=block_design, grid=grid_design,shared=shared_mem)
 
     return dest
 
@@ -57,10 +64,14 @@ def _univariate_pdf_call(cu_func, data, packed_params):
     ndata = len(data)
     nparams = len(packed_params)
 
+    func_regs = cu_func.num_regs
+
     data = util.prep_ndarray(data)
     packed_params = util.prep_ndarray(packed_params)
 
-    data_per, params_per = util.tune_blocksize(data, packed_params)
+    data_per, params_per = util.tune_blocksize(data, 
+                                               packed_params,
+                                               func_regs)
 
     shared_mem = util.compute_shmem(data, packed_params,
                                     data_per, params_per)
