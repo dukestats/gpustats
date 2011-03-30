@@ -131,8 +131,8 @@ def get_boxes(n, box_size):
 def compute_shmem(data, params, data_per, params_per):
     result_space = data_per * params_per
 
-    data_dim = 1 if data.ndim == 1 else data.shape[1]
-    params_dim = len(params) if params.ndim == 1 else params.shape[1]
+    data_dim = 1 if len(data.shape) == 1 else data.shape[1]
+    params_dim = len(params) if len(params.shape) == 1 else params.shape[1]
 
     param_space = params_dim * params_per
     data_space = data_dim * data_per

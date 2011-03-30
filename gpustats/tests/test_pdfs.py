@@ -47,6 +47,7 @@ def _compare_single(n, k):
     # cpu in PyMC
     pyresult = compat.python_mvnpdf(data, [mean], [cov]).squeeze()
     # gpu
+
     result = gps.mvnpdf(data, mean, cov)
     return result, pyresult
 

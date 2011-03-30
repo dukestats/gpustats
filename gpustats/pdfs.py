@@ -9,6 +9,7 @@ reload(codegen)
 reload(kernels)
 import gpustats.util as util
 import pycuda.driver as drv
+import pycuda.gpuarray as gpuarray
 
 __all__ = ['mvnpdf', 'mvnpdf_multi', 'normpdf', 'normpdf_multi']
 
@@ -18,13 +19,23 @@ cu_module = codegen.get_full_cuda_module()
 # Invokers for univariate and multivariate density functions conforming to the
 # standard API
 
-def _multivariate_pdf_call(cu_func, data, packed_params):
-    padded_data = util.pad_data(data)
+def _multivariate_pdf_call(cu_func, data, packed_params,return_gpuarray, datashape=None):
+
     packed_params = util.prep_ndarray(packed_params)
 
     func_regs = cu_func.num_regs
 
-    ndata, dim = data.shape
+    if type(data) == gpuarray:
+        padded_data = data
+        if datashape==None:
+            ndata, dim = data.shape
+        else:
+            ndata, dim = datashape
+
+    else:
+        ndata, dim = data.shape
+        padded_data = util.pad_data(data)
+
 
     nparams = len(packed_params)
     data_per, params_per = util.tune_blocksize(padded_data,
@@ -50,23 +61,36 @@ def _multivariate_pdf_call(cu_func, data, packed_params):
                       dtype=np.float32)
 
     if nparams == 1:
-        dest = np.zeros(ndata, dtype=np.float32)
+        gpu_dest = gpuarray.to_gpu(np.zeros(ndata, dtype=np.float32))
     else:
-        dest = np.zeros((ndata, nparams), dtype=np.float32, order='F')
+        gpu_dest = gpuarray.to_gpu(np.zeros((ndata, nparams), dtype=np.float32, order='F'))
 
-    cu_func(drv.Out(dest),
-            drv.In(padded_data), drv.In(packed_params), drv.In(design),
+    if not type(padded_data) == gpuarray:
+        gpu_padded_data = gpuarray.to_gpu(padded_data)
+    else:
+        gpu_padded_data = padded_data
+    
+    gpu_packed_params = gpuarray.to_gpu(packed_params)
+
+    cu_func(gpu_dest,
+            gpu_padded_data, gpu_packed_params, drv.In(design),
             block=block_design, grid=grid_design,shared=shared_mem)
 
-    return dest
+    if return_gpuarray:
+        return gpu_dest
+    else:
+        dest = gpu_dest.get()
+        if nparams > 1:
+            dest = np.reshape(dest,(nparams,ndata),order='C')
+            dest = dest.transpose()
+        return dest
 
-def _univariate_pdf_call(cu_func, data, packed_params):
+def _univariate_pdf_call(cu_func, data, packed_params, return_gpuarray):
     ndata = len(data)
     nparams = len(packed_params)
 
     func_regs = cu_func.num_regs
 
-    data = util.prep_ndarray(data)
     packed_params = util.prep_ndarray(packed_params)
 
     data_per, params_per = util.tune_blocksize(data, 
@@ -86,18 +110,28 @@ def _univariate_pdf_call(cu_func, data, packed_params):
                        packed_params.shape), # params spec
                       dtype=np.float32)
 
-    dest = np.zeros((ndata, nparams), dtype=np.float32, order='F')
+    gpu_dest = gpuarray.to_gpu(np.zeros((ndata, nparams), dtype=np.float32, order='F'))
 
-    cu_func(drv.Out(dest),
-            drv.In(data), drv.In(packed_params), drv.In(design),
+    if type(data) == gpuarray:
+        gpu_data = data
+    else:
+        gpu_data = gpuarray.to_gpu(data)
+
+    gpu_packed_params = gpuarray.to_gpu(packed_params)
+
+    cu_func(gpu_dest,
+            gpu_data, gpu_packed_params, drv.In(design),
             block=block_design, grid=grid_design, shared=shared_mem)
 
-    return dest
+    if return_gpuarray:
+        return gpu_dest
+    else:
+        return gpu_dest.get()
 
 #-------------------------------------------------------------------------------
 # Multivariate normal
 
-def mvnpdf(data, mean, cov, weight=None, logged=True):
+def mvnpdf(data, mean, cov, weight=None, logged=True, return_gpuarray=False):
     """
     Multivariate normal density
 
@@ -107,9 +141,10 @@ def mvnpdf(data, mean, cov, weight=None, logged=True):
     Returns
     -------
     """
-    return mvnpdf_multi(data, [mean], [cov]).squeeze()
+    return mvnpdf_multi(data, [mean], [cov],
+                        logged=logged, return_gpuarray=return_gpuarray).squeeze()
 
-def mvnpdf_multi(data, means, covs, weights=None, logged=True):
+def mvnpdf_multi(data, means, covs, weights=None, logged=True, return_gpuarray=False):
     """
     Multivariate normal density with multiple sets of parameters
 
@@ -124,6 +159,8 @@ def mvnpdf_multi(data, means, covs, weights=None, logged=True):
     -------
     densities : n x j
     """
+
+    
     if logged:
         cu_func = cu_module.get_function('log_pdf_mvnormal')
     else:
@@ -139,7 +176,7 @@ def mvnpdf_multi(data, means, covs, weights=None, logged=True):
 
     packed_params = _pack_mvnpdf_params(means, ichol_sigmas, logdets, weights)
 
-    return _multivariate_pdf_call(cu_func, data, packed_params)
+    return _multivariate_pdf_call(cu_func, data, packed_params, return_gpuarray)
 
 def _pack_mvnpdf_params(means, ichol_sigmas, logdets, weights):
     to_pack = []
@@ -168,7 +205,7 @@ def _pack_mvnpdf_params_single(mean, ichol_sigma, logdet, weight=1):
 #-------------------------------------------------------------------------------
 # Univariate normal
 
-def normpdf(x, mean, std, logged=True):
+def normpdf(x, mean, std, logged=True, return_gpuarray=False):
     """
     Normal (Gaussian) density
 
@@ -178,16 +215,21 @@ def normpdf(x, mean, std, logged=True):
     Returns
     -------
     """
-    return normpdf_multi(x, [mean], [std], logged=logged).squeeze()
+    return normpdf_multi(x, [mean], [std],
+                         logged=logged,return_gpuarray=return_gpuarray).squeeze()
 
-def normpdf_multi(x, means, std, logged=True):
+def normpdf_multi(x, means, std, logged=True, return_gpuarray=False):
     if logged:
         cu_func = cu_module.get_function('log_pdf_normal')
     else:
         cu_func = cu_module.get_function('pdf_normal')
 
     packed_params = np.c_[means, std]
-    return _univariate_pdf_call(cu_func, x, packed_params)
+
+    if not type(x) == gpuarray:
+        x = util.prep_ndarray(x)
+
+    return _univariate_pdf_call(cu_func, x, packed_params,return_gpuarray)
 
 if __name__ == '__main__':
     import gpustats.compat as compat
