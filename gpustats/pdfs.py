@@ -19,18 +19,19 @@ cu_module = codegen.get_full_cuda_module()
 # Invokers for univariate and multivariate density functions conforming to the
 # standard API
 
-def _multivariate_pdf_call(cu_func, data, packed_params,return_gpuarray, datashape=None):
+def _multivariate_pdf_call(cu_func, data, packed_params,return_gpuarray, datadim=None):
 
     packed_params = util.prep_ndarray(packed_params)
 
     func_regs = cu_func.num_regs
 
+    # Prep the data. Skip if gpudata ... 
     if type(data) == gpuarray:
         padded_data = data
-        if datashape==None:
+        if datadim==None:
             ndata, dim = data.shape
         else:
-            ndata, dim = datashape
+            ndata, dim = data.shape[0], datadim
 
     else:
         ndata, dim = data.shape
@@ -65,6 +66,7 @@ def _multivariate_pdf_call(cu_func, data, packed_params,return_gpuarray, datasha
     else:
         gpu_dest = gpuarray.to_gpu(np.zeros((ndata, nparams), dtype=np.float32, order='F'))
 
+    # Upload data if not already uploaded 
     if not type(padded_data) == gpuarray:
         gpu_padded_data = gpuarray.to_gpu(padded_data)
     else:
@@ -80,6 +82,7 @@ def _multivariate_pdf_call(cu_func, data, packed_params,return_gpuarray, datasha
         return gpu_dest
     else:
         dest = gpu_dest.get()
+        # Fortran ordering gets lost in gpuarray ... this is a hack ...
         if nparams > 1:
             dest = np.reshape(dest,(nparams,ndata),order='C')
             dest = dest.transpose()
@@ -131,7 +134,8 @@ def _univariate_pdf_call(cu_func, data, packed_params, return_gpuarray):
 #-------------------------------------------------------------------------------
 # Multivariate normal
 
-def mvnpdf(data, mean, cov, weight=None, logged=True, return_gpuarray=False):
+def mvnpdf(data, mean, cov, weight=None, logged=True, return_gpuarray=False,
+           datadim=None):
     """
     Multivariate normal density
 
@@ -142,9 +146,11 @@ def mvnpdf(data, mean, cov, weight=None, logged=True, return_gpuarray=False):
     -------
     """
     return mvnpdf_multi(data, [mean], [cov],
-                        logged=logged, return_gpuarray=return_gpuarray).squeeze()
+                        logged=logged, return_gpuarray=return_gpuarray,
+                        datadim=datadim).squeeze()
 
-def mvnpdf_multi(data, means, covs, weights=None, logged=True, return_gpuarray=False):
+def mvnpdf_multi(data, means, covs, weights=None, logged=True, 
+                 return_gpuarray=False, datadim=None):
     """
     Multivariate normal density with multiple sets of parameters
 
@@ -154,6 +160,16 @@ def mvnpdf_multi(data, means, covs, weights=None, logged=True, return_gpuarray=F
     covs : sequence of 2d k x k matrices (length j)
     weights : ndarray (length j)
         Multiplier for component j, usually will sum to 1
+
+    return_gpuarray = True leaves the result on the GPU
+    without copying back.
+
+    If data has already been padded, the orginal dimension
+    must be passed in datadim
+
+    It data is of GPUarray type, the data is assumed to be
+    padded, and datadim will need to be passed if padding
+    was needed.
 
     Returns
     -------
@@ -176,7 +192,8 @@ def mvnpdf_multi(data, means, covs, weights=None, logged=True, return_gpuarray=F
 
     packed_params = _pack_mvnpdf_params(means, ichol_sigmas, logdets, weights)
 
-    return _multivariate_pdf_call(cu_func, data, packed_params, return_gpuarray)
+    return _multivariate_pdf_call(cu_func, data, packed_params,
+                                  return_gpuarray, datadim)
 
 def _pack_mvnpdf_params(means, ichol_sigmas, logdets, weights):
     to_pack = []
