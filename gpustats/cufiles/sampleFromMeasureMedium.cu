@@ -1,11 +1,11 @@
 
 
-__global__ void %(name)s(float* in_measure, /** Precomputed measure */
+__global__ void k_%(name)s(float* in_measure, /** Precomputed measure */
 					float* in_random, /** Precomputed random number */
 					int* out_component, /** Resultant choice */
-					int dims) {
-  const int iN = dims[0];
-  const int iT = dims[1];
+					int* dims) {
+  int iN = dims[0];
+  int iT = dims[1];
 
   const int sample_density_block = blockDim.x;
   const int sample_block = blockDim.y;
@@ -25,10 +25,6 @@ __global__ void %(name)s(float* in_measure, /** Precomputed measure */
   float* sum = measure + sample_block*sample_density_block;
   float* work = sum + sample_block;
 
-#if defined(LOGPDF)
-  float* maxpdf = work + sample_block;
-#endif
-
   // use 'work' in multiple places to save on memory
   if (thidx == 0) {
     sum[thidy] = 0;
@@ -47,9 +43,11 @@ __global__ void %(name)s(float* in_measure, /** Precomputed measure */
     
     if (thidx == 0) {
       for(int i=0; i<sample_density_block; i++) {
-	float dcurrent = measure[thidy*sample_block + i];
-	if (dcurrent > work[thidy]) {
-	  work[thidy] = dcurrent;
+	if(chunk + i < iT){
+	  float dcurrent = measure[thidy*sample_block + i];
+	  if (dcurrent > work[thidy]) {
+	    work[thidy] = dcurrent;
+	  }
 	}
       }
     }
@@ -67,16 +65,19 @@ __global__ void %(name)s(float* in_measure, /** Precomputed measure */
 
     if (thidx == 0) {
       for(int i=0; i<sample_density_block; i++) {
+	if (chunk + i < iT){
 #if defined(LOGPDF)
-	sum[thidy] += exp(measure[thidy*sample_block + i] - work[thidy]);		//rescale and exp()
+	  //rescale and exp()
+	  sum[thidy] += exp(measure[thidy*sample_block + i] - work[thidy]); 
 #else
-	sum[thidy] += measure[thidy*sample_block + i];
+	  sum[thidy] += measure[thidy*sample_block + i];
 #endif
-	measure[thidy*sample_block + i] = sum[thidy];
+	  measure[thidy*sample_block + i] = sum[thidy];
+	}
       }
     }
 
-    if (chunk + thidx < iT) /*** ADDED */
+    if (chunk + thidx < iT)
       in_measure[pdfIndex + chunk + thidx] = measure[thidy*sample_block + thidx];
     
     __syncthreads();
@@ -101,11 +102,13 @@ __global__ void %(name)s(float* in_measure, /** Precomputed measure */
       // storing the index in a float is better because it avoids
       // bank conflicts ... 
       for(int i=0; i<sample_density_block; i++) {
-	if (randomNumber > measure[thidy*sample_block + i]){
-	  work[thidy] = i + chunk + 1;
+	if (chunk + i < iT){
+	  if (randomNumber > measure[thidy*sample_block + i]){
+	    work[thidy] = i + chunk + 1;
+	  }
 	}
       }
-      if ((int)work[thidy] >= iT) {work[thidy] = iT-1;}
+      if ((int) work[thidy] >= iT) {work[thidy] = iT-1;}
     }
   }
   __syncthreads();

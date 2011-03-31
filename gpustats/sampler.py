@@ -1,6 +1,6 @@
 import numpy as np
 
-import gpustats.kernets as kernels
+import gpustats.kernels as kernels
 import gpustats.codegen as codegen
 reload(codegen)
 reload(kernels)
@@ -44,12 +44,12 @@ def sample_discrete(densities, logged=False, return_gpuarray=False):
     gpu_dims = gpuarray.to_gpu(np.array([n,k],dtype=np.int32))
 
     # optimize design ... 
-    grid_design, block_design = util.tune_sfm(n, k, cu_func.num_regs)
+    grid_design, block_design = util.tune_sfm(n, k, cu_func.num_regs, logged)
 
-    shared_mem = block_design[0]*block_design[1] + 2*block_design[1]
+    shared_mem = 4*(block_design[0]*block_design[1] + 2*block_design[1])
 
     cu_func(gpu_densities, gpu_random, gpu_dest, gpu_dims,
-            block=block_design, grid=grid_design, shared-shared_mem)
+            block=block_design, grid=grid_design, shared=shared_mem)
 
     if return_gpuarray:
         return gpu_dest

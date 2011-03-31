@@ -1,14 +1,15 @@
 import numpy as np
 import pymc.distributions as pymc_dist
 import pycuda.driver as drv
+import pycuda
 
 _dev_attr = drv.device_attribute
 
 class DeviceInfo(object):
 
-    def __init__(self, dev=0):
-        self.dev = dev
-        self._dev = drv.Device(dev)
+    def __init__(self):
+        self._dev = pycuda.autoinit.device
+        #self._dev = drv.Device(dev)
         self._attr = self._dev.get_attributes()
 
         self.max_block_threads = self._attr[_dev_attr.MAX_THREADS_PER_BLOCK]
@@ -64,13 +65,13 @@ def prep_ndarray(arr):
     return arr
 
 
-def tune_sfm(n, k, func_regs, device=0):
+def tune_sfm(n, k, func_regs ,logged=False):
     """
     Outputs the 'opimal' block and grid configuration
     for the sample from measure kernel.
     """
-    info = DeviceInfo(device)
-    comp_cap = infp.compute_cap
+    info = DeviceInfo()
+    comp_cap = info.compute_cap
     max_smem = info.shared_mem * 0.9
     max_threads = int(info.max_block_threads * 0.5)
     max_regs = info.max_registers
@@ -83,9 +84,10 @@ def tune_sfm(n, k, func_regs, device=0):
     else:
         xdim = 32
     
+
     def sfm_config_ok(xdim, ydim, func_regs, max_regs, max_smem, max_threads):
-        ok = xdim*ydim + 2*ydim < max_smem and func_regs*ydim*xdim < max_regs
-        return ok and xdim*ydim < max_threads
+        ok = 4*(xdim*ydim + 2*ydim) < max_smem and func_regs*ydim*xdim < max_regs
+        return ok and xdim*ydim <= max_threads
 
     ydim = 16
     while sfm_config_ok(xdim, ydim, func_regs, max_regs, max_smem, max_threads):
@@ -95,11 +97,11 @@ def tune_sfm(n, k, func_regs, device=0):
     
     nblocks = int(n/ydim) + 1
 
-    return ((nblocks,1),(xdim,ydim,q))
+    return (nblocks,1), (xdim,ydim,1)
     
     
 
-def tune_blocksize(data, params, func_regs, device=0):
+def tune_blocksize(data, params, func_regs):
     """
     For multivariate distributions-- what's the optimal block size given the
     gpu?
@@ -115,7 +117,7 @@ def tune_blocksize(data, params, func_regs, device=0):
     """
     # TODO: how to figure out active device in this thread for the multigpu
     # case?
-    info = DeviceInfo(device)
+    info = DeviceInfo()
 
     max_smem = info.shared_mem * 0.9
     max_threads = int(info.max_block_threads * 0.5)
