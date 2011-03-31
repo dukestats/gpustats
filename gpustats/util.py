@@ -15,6 +15,7 @@ class DeviceInfo(object):
         self.shared_mem = self._attr[_dev_attr.MAX_SHARED_MEMORY_PER_BLOCK]
         self.warp_size = self._attr[_dev_attr.WARP_SIZE]
         self.max_registers = self._attr[_dev_attr.MAX_REGISTERS_PER_BLOCK]
+        self.compute_cap = self._dev.compute_capability()
 
 HALF_WARP = 16
 
@@ -62,6 +63,41 @@ def prep_ndarray(arr):
 
     return arr
 
+
+def tune_sfm(n, k, func_regs, device=0):
+    """
+    Outputs the 'opimal' block and grid configuration
+    for the sample from measure kernel.
+    """
+    info = DeviceInfo(device)
+    comp_cap = infp.compute_cap
+    max_smem = info.shared_mem * 0.9
+    max_threads = int(info.max_block_threads * 0.5)
+    max_regs = info.max_registers
+
+    # We want smallest dim possible in x dimsension while
+    # still reading mem correctly
+
+    if comp_cap[0] == 1:
+        xdim = 16
+    else:
+        xdim = 32
+    
+    def sfm_config_ok(xdim, ydim, func_regs, max_regs, max_smem, max_threads):
+        ok = xdim*ydim + 2*ydim < max_smem and func_regs*ydim*xdim < max_regs
+        return ok and xdim*ydim < max_threads
+
+    ydim = 16
+    while sfm_config_ok(xdim, ydim, func_regs, max_regs, max_smem, max_threads):
+        ydim += 1
+
+    ydim -= 1
+    
+    nblocks = int(n/ydim) + 1
+
+    return ((nblocks,1),(xdim,ydim,q))
+    
+    
 
 def tune_blocksize(data, params, func_regs, device=0):
     """

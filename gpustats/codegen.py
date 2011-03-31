@@ -51,6 +51,10 @@ def _get_mvcaller_code():
     path = os.path.join(_get_cuda_code_path(), 'mvcaller.cu')
     return open(path).read()
 
+def _get_measurecaller_code():
+    path = os.path.join(_get_cuda_code_path(), 'sampleFromMeasureMedium.cu')
+    return open(path).read()
+
 def _get_univcaller_code():
     # For univariate pdfs
     path = os.path.join(_get_cuda_code_path(), 'univcaller.cu')
@@ -75,6 +79,21 @@ class Kernel(object):
             name = self.name
 
         return name
+
+class SampleMeasureKernel(Kernel):
+    """
+    Holds info for measure sample kernel.
+    """
+    _caller = _get_measurecaller_code()
+    def __init__(self, name, logic_code):
+        Kernel.__init__(self,name)
+        self.logic_code = logic_code
+
+    def get_logic(self, name=None):
+        return self.logic_code
+
+    def get_caller(self, name=None):
+        return self._caller % {'name' : self.get_name(name)}
 
 class DensityKernel(Kernel):
     """
