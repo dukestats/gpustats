@@ -54,7 +54,7 @@ def sample_discrete(densities, logged=False, return_gpuarray=False):
     if return_gpuarray:
         return gpu_dest
     else:
-        dest = gpu_dest.get()
+        return gpu_dest.get()
 
     
 
