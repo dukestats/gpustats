@@ -41,14 +41,14 @@ def sample_discrete(densities, logged=False, return_gpuarray=False):
     # setup GPU data
     gpu_random = curand(n)
     gpu_dest = gpuarray.to_gpu(np.zeros(n, dtype=np.int32))
-    gpu_dims = gpuarray.to_gpu(np.array([n,k],dtype=np.int32))
+    dims = np.array([n,k],dtype=np.int32)
 
     # optimize design ... 
     grid_design, block_design = util.tune_sfm(n, k, cu_func.num_regs, logged)
 
     shared_mem = 4*(block_design[0]*block_design[1] + 2*block_design[1])
 
-    cu_func(gpu_densities, gpu_random, gpu_dest, gpu_dims,
+    cu_func(gpu_densities, gpu_random, gpu_dest, dims[0], dims[1],
             block=block_design, grid=grid_design, shared=shared_mem)
 
     if return_gpuarray:

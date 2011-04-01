@@ -59,7 +59,7 @@ def _multivariate_pdf_call(cu_func, data, packed_params,return_gpuarray, datadim
                        padded_data.shape + # data spec
                        (dim,) + # non-padded number of data columns
                        packed_params.shape), # params spec
-                      dtype=np.float32)
+                      dtype=np.int32)
 
     if nparams == 1:
         gpu_dest = gpuarray.to_gpu(np.zeros(ndata, dtype=np.float32))
@@ -75,8 +75,10 @@ def _multivariate_pdf_call(cu_func, data, packed_params,return_gpuarray, datadim
     gpu_packed_params = gpuarray.to_gpu(packed_params)
 
     cu_func(gpu_dest,
-            gpu_padded_data, gpu_packed_params, drv.In(design),
-            block=block_design, grid=grid_design,shared=shared_mem)
+            gpu_padded_data, gpu_packed_params, design[0],
+            design[1],design[2],design[3],design[4],
+            design[5],design[6],block=block_design,
+            grid=grid_design,shared=shared_mem)
 
     if return_gpuarray:
         return gpu_dest
@@ -111,7 +113,7 @@ def _univariate_pdf_call(cu_func, data, packed_params, return_gpuarray):
     design = np.array(((data_per, params_per) + # block design
                        (len(data),) +
                        packed_params.shape), # params spec
-                      dtype=np.float32)
+                      dtype=np.int32)
 
     gpu_dest = gpuarray.to_gpu(np.zeros((ndata, nparams), dtype=np.float32, order='F'))
 
@@ -123,7 +125,8 @@ def _univariate_pdf_call(cu_func, data, packed_params, return_gpuarray):
     gpu_packed_params = gpuarray.to_gpu(packed_params)
 
     cu_func(gpu_dest,
-            gpu_data, gpu_packed_params, drv.In(design),
+            gpu_data, gpu_packed_params, design[0],
+            design[1], design[2], design[3], design[4],
             block=block_design, grid=grid_design, shared=shared_mem)
 
     if return_gpuarray:

@@ -1,11 +1,11 @@
 
 
 __global__ void k_%(name)s(float* in_measure, /** Precomputed measure */
-					float* in_random, /** Precomputed random number */
-					int* out_component, /** Resultant choice */
-					int* dims) {
-  int iN = dims[0];
-  int iT = dims[1];
+			   float* in_random, /** Precomputed random number */
+			   int* out_component, /** Resultant choice */
+			   int iN, int iT) {
+  //const int iN = dims[0];
+  //const int iT = dims[1];
 
   const int sample_density_block = blockDim.x;
   const int sample_block = blockDim.y;
@@ -57,10 +57,10 @@ __global__ void k_%(name)s(float* in_measure, /** Precomputed measure */
 
 
   //get scaled cummulative pdfs
-
   for(int chunk = 0; chunk < iT; chunk += sample_density_block) {
 
     measure[thidy*sample_block + thidx] = in_measure[pdfIndex + chunk + thidx];
+    
     __syncthreads();
 
     if (thidx == 0) {
@@ -89,7 +89,12 @@ __global__ void k_%(name)s(float* in_measure, /** Precomputed measure */
   }
 #endif
 
-  float randomNumber = in_random[datumIndex] * sum[thidy];
+  float* randomNumber = sum;
+  const int result_id = blockIdx.x * sample_block + tid;
+  if ( tid < sample_block )
+    randomNumber[tid] = in_random[result_id] * sum[tid];
+
+  // randomNumber = in_random[datumIndex] * sum[thidy];
 
   // Find the right bin for the random number ...
   for(int chunk = 0; chunk < iT; chunk += sample_density_block) {
@@ -103,7 +108,7 @@ __global__ void k_%(name)s(float* in_measure, /** Precomputed measure */
       // bank conflicts ... 
       for(int i=0; i<sample_density_block; i++) {
 	if (chunk + i < iT){
-	  if (randomNumber > measure[thidy*sample_block + i]){
+	  if (randomNumber[thidy] > measure[thidy*sample_block + i]){
 	    work[thidy] = i + chunk + 1;
 	  }
 	}
@@ -112,8 +117,6 @@ __global__ void k_%(name)s(float* in_measure, /** Precomputed measure */
     }
   }
   __syncthreads();
-
-  const int result_id = blockIdx.x * sample_block + tid;
 
   // this is now coalesced
   if (result_id < iN && tid < sample_block)

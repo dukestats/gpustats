@@ -89,7 +89,7 @@ def tune_sfm(n, k, func_regs ,logged=False):
         ok = 4*(xdim*ydim + 2*ydim) < max_smem and func_regs*ydim*xdim < max_regs
         return ok and xdim*ydim <= max_threads
 
-    ydim = 16
+    ydim = 2
     while sfm_config_ok(xdim, ydim, func_regs, max_regs, max_smem, max_threads):
         ydim += 1
 
