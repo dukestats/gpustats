@@ -12,7 +12,7 @@ from pycuda.curandom import rand as curand
 
 cu_module = codegen.get_full_cuda_module()
 
-def sample_discrete(densities, logged=False, return_gpuarray=False):
+def sample_discrete(in_densities, logged=False, pad=False, return_gpuarray=False):
     """
     Takes a categorical sample from the unnormalized univariate
     densities defined in the rows of 'densities'
@@ -28,6 +28,16 @@ def sample_discrete(densities, logged=False, return_gpuarray=False):
     indices : ndarray or gpuarray (if return_gpuarray=True)
     of length n and dtype = int32
     """
+
+    if pad:
+        if logged:
+            densities = util.pad_data_mult16(in_densities, fill=1)
+        else:
+            densities = util.pad_data_mult16(in_densities, fill=0)
+
+    else:
+        densities = in_densities
+
     n, k = densities.shape
 
     cu_func = cu_module.get_function('sample_measure')

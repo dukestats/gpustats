@@ -1,6 +1,7 @@
 import numpy as np
 import pymc.distributions as pymc_dist
 import pycuda.driver as drv
+import pycuda.gpuarray as gpuarray
 import pycuda
 
 _dev_attr = drv.device_attribute
@@ -37,11 +38,38 @@ def unvech(v):
 
     return result
 
+def pad_data_mult16(data, fill=0):
+    """
+    Pad data to be a multiple of 16 for discrete sampler.
+    """
+
+    if type(data) == gpuarray:
+        data = data.get()
+
+    n, k = data.shape
+
+    km = int(k/16) + 1
+
+    newk = km*16
+    if newk != k:
+        padded_data = np.zeros((n, newk), dtype=np.float32)
+        if fill!=0:
+            padded_data = padded_data + fill
+
+        padded_data[:,:k] = data
+
+        return padded_data
+    else:
+        return prep_ndarray(data)
+
 def pad_data(data):
     """
     Pad data to avoid bank conflicts on the GPU-- dimension should not be a
     multiple of the half-warp size (16)
     """
+    if type(data) == gpuarray:
+        data = data.get()
+
     n, k = data.shape
 
     if not k % HALF_WARP:

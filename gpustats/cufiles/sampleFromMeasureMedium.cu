@@ -1,3 +1,7 @@
+// If compute cabability is 1.1 or 1.0 ... this really should be padded in T to a multiple of 16.
+// If    "        "        is higher, this should be pretty good because of caching and the
+// ability to read mis-alighned sequences of memory in 2 or less reads..
+
 
 
 __global__ void k_%(name)s(float* in_measure, /** Precomputed measure */
