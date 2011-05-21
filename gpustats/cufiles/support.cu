@@ -1,6 +1,6 @@
 
-#define LOG_2_PI 1.83787706640935
-#define LOG_PI 1.144729885849400
+#define LOG_2_PI 1.83787706640935f
+#define LOG_PI 1.144729885849400f
 
 __device__ int d_next_multiple(int k, int mult) {
   if (k % mult)

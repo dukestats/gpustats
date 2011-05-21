@@ -13,6 +13,14 @@ functionality:
 
 * Random variable generation using CURAND
 
+Requirements
+------------
+
+* NumPy
+* SciPy
+* Working PyCUDA (http://pypi.python.org/pypi/pycuda) installation
+* (optional) PyMC, for test suite
+
 Installation and testing
 ------------------------
 
@@ -35,6 +43,18 @@ Use
 ::
 
     import gpustats
+
+People
+------
+
+Cliburn Chan cliburn.chan (at) duke.edu
+Andrew Cron ajc40 (at) stat.duke.edu
+Jacob Frelinger jacob.frelinger (at) duke.edu
+Wes McKinney wesmckinn (at) gmail.com
+Adam Richards adam.richards (at) duke.edu
+Marc Suchard msuchard (at) ucla.edu
+Quanli Wang quanli (at) stat.duke.edu
+Mike West mw (at) stat.duke.edu
 
 Notes
 -----

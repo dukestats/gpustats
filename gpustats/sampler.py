@@ -12,7 +12,8 @@ from pycuda.curandom import rand as curand
 
 cu_module = codegen.get_full_cuda_module()
 
-def sample_discrete(in_densities, logged=False, pad=False, return_gpuarray=False):
+def sample_discrete(in_densities, logged=False, pad=False,
+                    return_gpuarray=False):
     """
     Takes a categorical sample from the unnormalized univariate
     densities defined in the rows of 'densities'
@@ -21,7 +22,7 @@ def sample_discrete(in_densities, logged=False, pad=False, return_gpuarray=False
     ---------
     densities : ndarray or gpuarray (n, k)
     logged: boolean indicating whether densities is on the
-    log scale ... 
+    log scale ...
 
     Returns
     -------
@@ -53,7 +54,7 @@ def sample_discrete(in_densities, logged=False, pad=False, return_gpuarray=False
     gpu_dest = gpuarray.to_gpu(np.zeros(n, dtype=np.int32))
     dims = np.array([n,k],dtype=np.int32)
 
-    # optimize design ... 
+    # optimize design ...
     grid_design, block_design = util.tune_sfm(n, k, cu_func.num_regs, logged)
 
     shared_mem = 4*(block_design[0]*block_design[1] + 2*block_design[1])
@@ -66,5 +67,5 @@ def sample_discrete(in_densities, logged=False, pad=False, return_gpuarray=False
     else:
         return gpu_dest.get()
 
-    
+
 

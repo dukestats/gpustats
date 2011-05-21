@@ -1,8 +1,12 @@
 import numpy as np
-import pymc.distributions as pymc_dist
 import pycuda.driver as drv
 import pycuda.gpuarray as gpuarray
 import pycuda
+
+try:
+    import pymc.distributions as pymc_dist
+except ImportError:
+    pass
 
 _dev_attr = drv.device_attribute
 
@@ -111,7 +115,7 @@ def tune_sfm(n, k, func_regs ,logged=False):
         xdim = 16
     else:
         xdim = 32
-    
+
 
     def sfm_config_ok(xdim, ydim, func_regs, max_regs, max_smem, max_threads):
         ok = 4*(xdim*ydim + 2*ydim) < max_smem and func_regs*ydim*xdim < max_regs
@@ -122,12 +126,12 @@ def tune_sfm(n, k, func_regs ,logged=False):
         ydim += 1
 
     ydim -= 1
-    
+
     nblocks = int(n/ydim) + 1
 
     return (nblocks,1), (xdim,ydim,1)
-    
-    
+
+
 
 def tune_blocksize(data, params, func_regs):
     """

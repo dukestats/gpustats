@@ -169,13 +169,13 @@ __device__ float %(name)s(float* x, float* params, int dim) {
 """
 
 class Exp(Flop):
-    op = 'exp'
+    op = 'expf'
 
 class Log(Flop):
-    op = 'log'
+    op = 'logf'
 
 class Sqrt(Flop):
-    op = 'sqrt'
+    op = 'sqrtf'
 
 def get_full_cuda_module():
     import gpustats.kernels as kernels

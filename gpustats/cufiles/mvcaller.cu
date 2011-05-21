@@ -8,31 +8,15 @@
  */
 
 __global__ void k_%(name)s(float* output,
-			   float* data,
-			   float* params,
-			   int data_per_block,
-			   int params_per_block,
-			   int data_rows,
-			   int data_stride,
-			   int data_cols,
-			   int params_rows,
-			   int params_stride) {
-
-  // Think of a more elegant, efficient way of doing this
-  // use shared memory?
-  //unsigned int data_per_block, params_per_block;
-  //unsigned int data_rows, data_stride, data_cols;
-  //unsigned int params_rows, params_stride;
-
-  // inelegant, perhaps...
-  //data_per_block = design[0];
-  //params_per_block = design[1];
-  //data_rows = design[2];
-  //data_stride = design[3];
-  //data_cols = design[4];
-  //params_rows = design[5];
-  //params_stride = design[6];
-  // unsigned int params_cols = design[7];
+						   float* data,
+						   float* params,
+						   int data_per_block,
+						   int params_per_block,
+						   int data_rows,
+						   int data_stride,
+						   int data_cols,
+						   int params_rows,
+						   int params_stride) {
 
   unsigned int tid = threadIdx.y * blockDim.x + threadIdx.x;
 
@@ -63,8 +47,8 @@ __global__ void k_%(name)s(float* output,
   // allocated enough shared memory so that this will not walk out of bounds
   // no matter what, though some of the results will be garbage
   sh_result[tid] = %(name)s(sh_data + rel_data * data_stride,
-							sh_params + rel_param * params_stride,
-							data_cols);
+                            sh_params + rel_param * params_stride,
+                            data_cols);
   __syncthreads();
 
   unsigned int result_idx = data_rows * param_num + obs_num;

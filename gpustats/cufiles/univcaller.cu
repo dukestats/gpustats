@@ -8,22 +8,10 @@ __global__ void k_%(name)s(float* output,
                            float* data,
                            float* params,
                            int data_per_block,
-			   int params_per_block,
-			   int nobs,
-			   int nparams,
-			   int params_stride) {
-
-  // Think of a more elegant, efficient way of doing this
-  // use shared memory?
-  //unsigned int data_per_block, params_per_block;
-  //unsigned int nobs, nparams, params_stride;
-
-  // inelegant, perhaps...
-  //data_per_block = design[0];
-  //params_per_block = design[1];
-  //nobs = design[2];
-  //nparams = design[3];
-  //params_stride = design[4];
+                           int params_per_block,
+                           int nobs,
+                           int nparams,
+                           int params_stride) {
 
   unsigned int tid = threadIdx.y * blockDim.x + threadIdx.x;
 
@@ -60,7 +48,7 @@ __global__ void k_%(name)s(float* output,
 
   // output is column-major, so this will then coalesce
   if (obs_num < nobs & param_num < nparams) {
-	output[result_idx] = obs_num;
+    output[result_idx] = obs_num;
     output[result_idx] = sh_result[tid];
   }
 }

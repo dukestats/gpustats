@@ -22,7 +22,7 @@ __device__ float %(name)s(float* data, float* params, int dim) {
     }
     discrim += sum * sum;
   }
-  return log(mult) - 0.5 * (discrim + logdet + LOG_2_PI * dim);
+  return log(mult) - 0.5f * (discrim + logdet + LOG_2_PI * dim);
 }
 """
 log_pdf_mvnormal = MVDensityKernel('log_pdf_mvnormal', _log_pdf_mvnormal)
@@ -36,7 +36,7 @@ __device__ float %(name)s(float* x, float* params) {
 
   // standardize
   float xstd = (*x - params[0]) / std;
-  return - (xstd * xstd) / 2 - 0.5 * LOG_2_PI - log(std);
+  return - (xstd * xstd) / 2 - 0.5f * LOG_2_PI - log(std);
 }
 """
 log_pdf_normal = DensityKernel('log_pdf_normal', _log_pdf_normal)
