@@ -3,13 +3,13 @@ from numpy.linalg import cholesky as chol
 import numpy as np
 import numpy.linalg as LA
 
+from pycuda.gpuarray import GPUArray, to_gpu
 import gpustats.kernels as kernels
 import gpustats.codegen as codegen
 reload(codegen)
 reload(kernels)
 import gpustats.util as util
 import pycuda.driver as drv
-import pycuda.gpuarray as gpuarray
 
 __all__ = ['mvnpdf', 'mvnpdf_multi', 'normpdf', 'normpdf_multi']
 
@@ -19,14 +19,13 @@ cu_module = codegen.get_full_cuda_module()
 # Invokers for univariate and multivariate density functions conforming to the
 # standard API
 
-def _multivariate_pdf_call(cu_func, data, packed_params,return_gpuarray, datadim=None):
-
+def _multivariate_pdf_call(cu_func, data, packed_params, get,
+                           datadim=None):
     packed_params = util.prep_ndarray(packed_params)
-
     func_regs = cu_func.num_regs
 
-    # Prep the data. Skip if gpudata ... 
-    if type(data) == gpuarray:
+    # Prep the data. Skip if gpudata ...
+    if isinstance(data, GPUArray):
         padded_data = data
         if datadim==None:
             ndata, dim = data.shape
@@ -47,10 +46,7 @@ def _multivariate_pdf_call(cu_func, data, packed_params,return_gpuarray, datadim
 
     shared_mem = util.compute_shmem(padded_data, packed_params,
                                     data_per, params_per)
-
-
     block_design = (data_per * params_per, 1, 1)
-
     grid_design = (util.get_boxes(ndata, data_per),
                    util.get_boxes(nparams, params_per))
 
@@ -62,35 +58,32 @@ def _multivariate_pdf_call(cu_func, data, packed_params,return_gpuarray, datadim
                       dtype=np.int32)
 
     if nparams == 1:
-        gpu_dest = gpuarray.to_gpu(np.zeros(ndata, dtype=np.float32))
+        gpu_dest = to_gpu(np.zeros(ndata, dtype=np.float32))
     else:
-        gpu_dest = gpuarray.to_gpu(np.zeros((ndata, nparams), dtype=np.float32, order='F'))
+        gpu_dest = to_gpu(np.zeros((ndata, nparams),
+                                   dtype=np.float32, order='F'))
 
-    # Upload data if not already uploaded 
-    if not type(padded_data) == gpuarray:
-        gpu_padded_data = gpuarray.to_gpu(padded_data)
+    # Upload data if not already uploaded
+    if not isinstance(padded_data, GPUArray):
+        gpu_padded_data = to_gpu(padded_data)
     else:
         gpu_padded_data = padded_data
-    
-    gpu_packed_params = gpuarray.to_gpu(packed_params)
 
-    cu_func(gpu_dest,
-            gpu_padded_data, gpu_packed_params, design[0],
-            design[1],design[2],design[3],design[4],
-            design[5],design[6],block=block_design,
-            grid=grid_design,shared=shared_mem)
+    gpu_packed_params = to_gpu(packed_params)
 
-    if return_gpuarray:
-        return gpu_dest
-    else:
-        dest = gpu_dest.get()
-        # Fortran ordering gets lost in gpuarray ... this is a hack ...
+    params = (gpu_dest, gpu_padded_data, gpu_packed_params) + tuple(design)
+    kwds = dict(block=block_design, grid=grid_design, shared=shared_mem)
+    cu_func(*params, **kwds)
+
+    if get:
+        output = gpu_dest.get()
         if nparams > 1:
-            dest = np.reshape(dest,(nparams,ndata),order='C')
-            dest = dest.transpose()
-        return dest
+            output = output.reshape((ndata, nparams), order='C')
+        return output
+    else:
+        return output
 
-def _univariate_pdf_call(cu_func, data, packed_params, return_gpuarray):
+def _univariate_pdf_call(cu_func, data, packed_params, get):
     ndata = len(data)
     nparams = len(packed_params)
 
@@ -98,7 +91,7 @@ def _univariate_pdf_call(cu_func, data, packed_params, return_gpuarray):
 
     packed_params = util.prep_ndarray(packed_params)
 
-    data_per, params_per = util.tune_blocksize(data, 
+    data_per, params_per = util.tune_blocksize(data,
                                                packed_params,
                                                func_regs)
 
@@ -115,29 +108,24 @@ def _univariate_pdf_call(cu_func, data, packed_params, return_gpuarray):
                        packed_params.shape), # params spec
                       dtype=np.int32)
 
-    gpu_dest = gpuarray.to_gpu(np.zeros((ndata, nparams), dtype=np.float32, order='F'))
-
-    if type(data) == gpuarray:
-        gpu_data = data
-    else:
-        gpu_data = gpuarray.to_gpu(data)
-
-    gpu_packed_params = gpuarray.to_gpu(packed_params)
+    gpu_dest = to_gpu(np.zeros((ndata, nparams), dtype=np.float32, order='F'))
+    gpu_data = data if isinstance(data, GPUArray) else to_gpu(data)
+    gpu_packed_params = to_gpu(packed_params)
 
     cu_func(gpu_dest,
             gpu_data, gpu_packed_params, design[0],
             design[1], design[2], design[3], design[4],
             block=block_design, grid=grid_design, shared=shared_mem)
 
-    if return_gpuarray:
-        return gpu_dest
-    else:
+    if get:
         return gpu_dest.get()
+    else:
+        return gpu_dest
 
 #-------------------------------------------------------------------------------
 # Multivariate normal
 
-def mvnpdf(data, mean, cov, weight=None, logged=True, return_gpuarray=False,
+def mvnpdf(data, mean, cov, weight=None, logged=True, get=True,
            datadim=None):
     """
     Multivariate normal density
@@ -149,11 +137,11 @@ def mvnpdf(data, mean, cov, weight=None, logged=True, return_gpuarray=False,
     -------
     """
     return mvnpdf_multi(data, [mean], [cov],
-                        logged=logged, return_gpuarray=return_gpuarray,
+                        logged=logged, get=get,
                         datadim=datadim).squeeze()
 
-def mvnpdf_multi(data, means, covs, weights=None, logged=True, 
-                 return_gpuarray=False, datadim=None):
+def mvnpdf_multi(data, means, covs, weights=None, logged=True,
+                 get=True, datadim=None):
     """
     Multivariate normal density with multiple sets of parameters
 
@@ -164,7 +152,7 @@ def mvnpdf_multi(data, means, covs, weights=None, logged=True,
     weights : ndarray (length j)
         Multiplier for component j, usually will sum to 1
 
-    return_gpuarray = True leaves the result on the GPU
+    get = True leaves the result on the GPU
     without copying back.
 
     If data has already been padded, the orginal dimension
@@ -178,8 +166,6 @@ def mvnpdf_multi(data, means, covs, weights=None, logged=True,
     -------
     densities : n x j
     """
-
-    
     if logged:
         cu_func = cu_module.get_function('log_pdf_mvnormal')
     else:
@@ -196,7 +182,7 @@ def mvnpdf_multi(data, means, covs, weights=None, logged=True,
     packed_params = _pack_mvnpdf_params(means, ichol_sigmas, logdets, weights)
 
     return _multivariate_pdf_call(cu_func, data, packed_params,
-                                  return_gpuarray, datadim)
+                                  get, datadim)
 
 def _pack_mvnpdf_params(means, ichol_sigmas, logdets, weights):
     to_pack = []
@@ -225,7 +211,7 @@ def _pack_mvnpdf_params_single(mean, ichol_sigma, logdet, weight=1):
 #-------------------------------------------------------------------------------
 # Univariate normal
 
-def normpdf(x, mean, std, logged=True, return_gpuarray=False):
+def normpdf(x, mean, std, logged=True, get=True):
     """
     Normal (Gaussian) density
 
@@ -235,10 +221,9 @@ def normpdf(x, mean, std, logged=True, return_gpuarray=False):
     Returns
     -------
     """
-    return normpdf_multi(x, [mean], [std],
-                         logged=logged,return_gpuarray=return_gpuarray).squeeze()
+    return normpdf_multi(x, [mean], [std], logged=logged, get=get).squeeze()
 
-def normpdf_multi(x, means, std, logged=True, return_gpuarray=False):
+def normpdf_multi(x, means, std, logged=True, get=True):
     if logged:
         cu_func = cu_module.get_function('log_pdf_normal')
     else:
@@ -246,10 +231,10 @@ def normpdf_multi(x, means, std, logged=True, return_gpuarray=False):
 
     packed_params = np.c_[means, std]
 
-    if not type(x) == gpuarray:
+    if not isinstance(x, GPUArray):
         x = util.prep_ndarray(x)
 
-    return _univariate_pdf_call(cu_func, x, packed_params,return_gpuarray)
+    return _univariate_pdf_call(cu_func, x, packed_params, get)
 
 if __name__ == '__main__':
     import gpustats.compat as compat

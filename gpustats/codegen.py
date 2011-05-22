@@ -5,6 +5,7 @@ import numpy
 import numpy.linalg as la
 import os
 from pycuda.compiler import SourceModule
+from gpustats.util import get_cufiles_path
 
 class CUDAModule(object):
     """
@@ -18,52 +19,40 @@ class CUDAModule(object):
         self.kernel_dict = kernel_dict
         self.support_code = _get_support_code()
 
-        all_code = self._get_full_source()
+        self.all_code = self._get_full_source()
         try:
-            self.pycuda_module = SourceModule(all_code)
+            self.pycuda_module = SourceModule(self.all_code)
         except Exception:
             f = open('foo.cu', 'w')
-            print >> f, all_code
+            print >> f, self.all_code
             f.close()
             raise
 
     def _get_full_source(self):
-        formatted_kernels = []
-
-        for name, kernel in self.kernel_dict.iteritems():
-            logic = kernel.get_logic()
-            caller = kernel.get_caller()
-            complete_code = '\n'.join((logic, caller))
-
-            formatted_kernels.append(complete_code)
-
+        formatted_kernels = [kern.get_code()
+                             for kern in self.kernel_dict.values()]
         return '\n'.join([self.support_code] + formatted_kernels)
 
     def get_function(self, name):
         return self.pycuda_module.get_function('k_%s' % name)
 
 def _get_support_code():
-    path = os.path.join(_get_cuda_code_path(), 'support.cu')
+    path = os.path.join(get_cufiles_path(), 'support.cu')
     return open(path).read()
 
 def _get_mvcaller_code():
     # for multivariate pdfs
-    path = os.path.join(_get_cuda_code_path(), 'mvcaller.cu')
+    path = os.path.join(get_cufiles_path(), 'mvcaller.cu')
     return open(path).read()
 
 def _get_measurecaller_code():
-    path = os.path.join(_get_cuda_code_path(), 'sampleFromMeasureMedium.cu')
+    path = os.path.join(get_cufiles_path(), 'sampleFromMeasureMedium.cu')
     return open(path).read()
 
 def _get_univcaller_code():
     # For univariate pdfs
-    path = os.path.join(_get_cuda_code_path(), 'univcaller.cu')
+    path = os.path.join(get_cufiles_path(), 'univcaller.cu')
     return open(path).read()
-
-def _get_cuda_code_path():
-    import os.path as pth
-    basepath = pth.abspath(pth.split(__file__)[0])
-    return pth.join(basepath, 'cufiles')
 
 class Kernel(object):
 
@@ -73,6 +62,17 @@ class Kernel(object):
 
         self.name = name
 
+    def get_code(self):
+        logic = self.get_logic()
+        caller = self.get_caller()
+        return '\n'.join((logic, caller))
+
+    def get_logic(self, **kwds):
+        raise NotImplementedError
+
+    def get_caller(self, **kwds):
+        raise NotImplementedError
+
     def get_name(self, name=None):
         # can override default name, for transforms. this a hack?
         if name is None:
@@ -80,14 +80,30 @@ class Kernel(object):
 
         return name
 
-class SampleMeasureKernel(Kernel):
+class CUFile(Kernel):
+    """
+    Expose kernel contained in .cu file in the cufiles directory to code
+    generation framework. Kernel need only have a template to be able to change
+    the name of the generated kernel
+    """
+    def __init__(self, name, filepath):
+        self.full_path = os.path.join(get_cufiles_path(),
+                                      filepath)
+
+        Kernel.__init__(self, name)
+
+    def get_code(self):
+        code = open(self.full_path).read()
+        return code % {'name' : self.name}
+
+class SamplerKernel(Kernel):
     """
     Holds info for measure sample kernel.
     """
     _caller = _get_measurecaller_code()
     def __init__(self, name, logic_code):
-        Kernel.__init__(self,name)
         self.logic_code = logic_code
+        Kernel.__init__(self, name)
 
     def get_logic(self, name=None):
         return self.logic_code
@@ -177,14 +193,21 @@ class Log(Flop):
 class Sqrt(Flop):
     op = 'sqrtf'
 
+_cu_module = None
+
 def get_full_cuda_module():
     import gpustats.kernels as kernels
-    objects = kernels.__dict__
+    global _cu_module
 
-    all_kernels = dict((k, v)
-                       for k, v in kernels.__dict__.iteritems()
-                       if isinstance(v, Kernel))
-    return CUDAModule(all_kernels)
+    if _cu_module is None:
+        objects = kernels.__dict__
+
+        all_kernels = dict((k, v)
+                           for k, v in kernels.__dict__.iteritems()
+                           if isinstance(v, Kernel))
+        _cu_module = CUDAModule(all_kernels)
+
+    return _cu_module
 
 if __name__ == '__main__':
     pass

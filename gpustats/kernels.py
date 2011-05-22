@@ -1,4 +1,5 @@
-from gpustats.codegen import MVDensityKernel, DensityKernel, Exp, SampleMeasureKernel
+from gpustats.codegen import (MVDensityKernel, DensityKernel, Exp,
+                              CUFile)
 import gpustats.codegen as cg
 
 # TODO: check for name conflicts!
@@ -42,9 +43,8 @@ __device__ float %(name)s(float* x, float* params) {
 log_pdf_normal = DensityKernel('log_pdf_normal', _log_pdf_normal)
 pdf_normal = Exp('pdf_normal', log_pdf_normal)
 
-_log_macro = """
-#define LOGPDF
-"""
+sample_discrete = CUFile('sample_discrete',
+                         'sample_discrete.cu')
 
-sample_measure_logged = SampleMeasureKernel('sample_measure_logged', _log_macro)
-sample_measure = SampleMeasureKernel('sample_measure',' ')
+sample_discrete_logged = CUFile('sample_discrete_logged',
+                                'sample_discrete_logged.cu')

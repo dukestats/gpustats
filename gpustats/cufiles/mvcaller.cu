@@ -7,9 +7,9 @@
   TODO: How to ensure coalescence
  */
 
-__global__ void k_%(name)s(float* output,
-						   float* data,
-						   float* params,
+__global__ void k_%(name)s(float* g_output,
+						   float* g_data,
+						   float* g_params,
 						   int data_per_block,
 						   int params_per_block,
 						   int data_rows,
@@ -32,12 +32,12 @@ __global__ void k_%(name)s(float* output,
   float* sh_data = sh_params + params_per_block * params_stride;
   float* sh_result = sh_data + data_per_block * data_stride;
 
-  copy_chunks(data + data_per_block * blockIdx.x * data_stride,
+  copy_chunks(g_data + data_per_block * blockIdx.x * data_stride,
               sh_data, tid,
               min(data_rows - data_per_block * blockIdx.x,
                   data_per_block) * data_stride);
 
-  copy_chunks(params + params_per_block * blockIdx.y * params_stride,
+  copy_chunks(g_params + params_per_block * blockIdx.y * params_stride,
               sh_params, tid,
               min(params_per_block,
                   params_rows - params_per_block * blockIdx.y) * params_stride);
@@ -53,9 +53,9 @@ __global__ void k_%(name)s(float* output,
 
   unsigned int result_idx = data_rows * param_num + obs_num;
 
-  // output is column-major, so this will then coalesce
+  // g_output is column-major, so this will then coalesce
   if (obs_num < data_rows & param_num < params_rows) {
-    output[result_idx] = sh_result[tid];
+    g_output[result_idx] = sh_result[tid];
   }
 }
 

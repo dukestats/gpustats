@@ -44,6 +44,13 @@ Use
 
     import gpustats
 
+Some development guidelines
+---------------------------
+
+* Use spaces (4 per indent), not spaces
+* Trim whitespace at the end of lines (most text editors will do this for you)
+* PEP8-consistent Python style
+
 People
 ------
 

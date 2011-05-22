@@ -3,11 +3,6 @@ import pycuda.driver as drv
 import pycuda.gpuarray as gpuarray
 import pycuda
 
-try:
-    import pymc.distributions as pymc_dist
-except ImportError:
-    pass
-
 _dev_attr = drv.device_attribute
 
 class DeviceInfo(object):
@@ -26,7 +21,8 @@ class DeviceInfo(object):
 HALF_WARP = 16
 
 def random_cov(dim):
-    return pymc_dist.rinverse_wishart(dim, np.eye(dim))
+    from pymc.distributions import rinverse_wishart
+    return rinverse_wishart(dim, np.eye(dim))
 
 def unvech(v):
     # quadratic formula, correct fp error
@@ -218,3 +214,8 @@ def next_multiple(k, mult):
         return k + (mult - k % mult)
     else:
         return k
+
+def get_cufiles_path():
+    import os.path as pth
+    basepath = pth.abspath(pth.split(__file__)[0])
+    return pth.join(basepath, 'cufiles')
