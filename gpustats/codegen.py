@@ -45,10 +45,6 @@ def _get_mvcaller_code():
     path = os.path.join(get_cufiles_path(), 'mvcaller.cu')
     return open(path).read()
 
-def _get_measurecaller_code():
-    path = os.path.join(get_cufiles_path(), 'sampleFromMeasureMedium.cu')
-    return open(path).read()
-
 def _get_univcaller_code():
     # For univariate pdfs
     path = os.path.join(get_cufiles_path(), 'univcaller.cu')
@@ -100,7 +96,6 @@ class SamplerKernel(Kernel):
     """
     Holds info for measure sample kernel.
     """
-    _caller = _get_measurecaller_code()
     def __init__(self, name, logic_code):
         self.logic_code = logic_code
         Kernel.__init__(self, name)

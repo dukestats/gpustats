@@ -55,7 +55,7 @@ def sample_discrete(in_densities, logged=False, pad=False,
     dims = np.array([n,k],dtype=np.int32)
 
     # optimize design ...
-    grid_design, block_design = util.tune_sfm(n, k, cu_func.num_regs, logged)
+    grid_design, block_design = _tune_sfm(n, k, cu_func.num_regs, logged)
 
     shared_mem = 4 * (block_design[0] * block_design[1] + 2 * block_design[1])
 
@@ -66,6 +66,42 @@ def sample_discrete(in_densities, logged=False, pad=False,
         return gpu_dest
     else:
         return gpu_dest.get()
+
+def _tune_sfm(n, k, func_regs ,logged=False):
+    """
+    Outputs the 'opimal' block and grid configuration
+    for the sample from measure kernel.
+    """
+    from gpustats.util import DeviceInfo
+
+    info = DeviceInfo()
+    comp_cap = info.compute_cap
+    max_smem = info.shared_mem * 0.9
+    max_threads = int(info.max_block_threads * 0.5)
+    max_regs = info.max_registers
+
+    # We want smallest dim possible in x dimsension while
+    # still reading mem correctly
+
+    if comp_cap[0] == 1:
+        xdim = 16
+    else:
+        xdim = 32
+
+
+    def sfm_config_ok(xdim, ydim, func_regs, max_regs, max_smem, max_threads):
+        ok = 4*(xdim*ydim + 2*ydim) < max_smem and func_regs*ydim*xdim < max_regs
+        return ok and xdim*ydim <= max_threads
+
+    ydim = 2
+    while sfm_config_ok(xdim, ydim, func_regs, max_regs, max_smem, max_threads):
+        ydim += 1
+
+    ydim -= 1
+
+    nblocks = int(n/ydim) + 1
+
+    return (nblocks,1), (xdim,ydim,1)
 
 if __name__ == '__main__':
     n = 20

@@ -93,40 +93,6 @@ def prep_ndarray(arr):
     return arr
 
 
-def tune_sfm(n, k, func_regs ,logged=False):
-    """
-    Outputs the 'opimal' block and grid configuration
-    for the sample from measure kernel.
-    """
-    info = DeviceInfo()
-    comp_cap = info.compute_cap
-    max_smem = info.shared_mem * 0.9
-    max_threads = int(info.max_block_threads * 0.5)
-    max_regs = info.max_registers
-
-    # We want smallest dim possible in x dimsension while
-    # still reading mem correctly
-
-    if comp_cap[0] == 1:
-        xdim = 16
-    else:
-        xdim = 32
-
-
-    def sfm_config_ok(xdim, ydim, func_regs, max_regs, max_smem, max_threads):
-        ok = 4*(xdim*ydim + 2*ydim) < max_smem and func_regs*ydim*xdim < max_regs
-        return ok and xdim*ydim <= max_threads
-
-    ydim = 2
-    while sfm_config_ok(xdim, ydim, func_regs, max_regs, max_smem, max_threads):
-        ydim += 1
-
-    ydim -= 1
-
-    nblocks = int(n/ydim) + 1
-
-    return (nblocks,1), (xdim,ydim,1)
-
 
 
 def tune_blocksize(data, params, func_regs):
