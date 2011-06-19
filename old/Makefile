@@ -38,20 +38,25 @@ endif
 CC_ARCH_FLAGS :=
 # NVCCFLAGS :=
 
-ifeq ($(OSNAME),Darwin)
-	NVCCFLAGS += -m32
-	LIB_ARCH = i386
-	CC_ARCH_FLAGS += -arch i386
-else
-	LIB_ARCH        = x86_64
-	CUDPPLIB_SUFFIX = x86_64
-	NVCCFLAGS      += -m64
-	ifneq ($(DARWIN),)
-	   CXX_ARCH_FLAGS += -arch x86_64
-	else
-	   CXX_ARCH_FLAGS += -m64
-	endif
-endif
+LIB_ARCH        = x86_64
+CUDPPLIB_SUFFIX = x86_64
+NVCCFLAGS      += -m64
+CXX_ARCH_FLAGS += -m64
+
+# ifeq ($(OSNAME),Darwin)
+# 	NVCCFLAGS += -m32
+# 	LIB_ARCH = i386
+# 	CC_ARCH_FLAGS += -arch i386
+# else
+# 	LIB_ARCH        = x86_64
+# 	CUDPPLIB_SUFFIX = x86_64
+# 	NVCCFLAGS      += -m64
+# 	ifneq ($(DARWIN),)
+# 	   CXX_ARCH_FLAGS += -arch x86_64
+# 	else
+# 	   CXX_ARCH_FLAGS += -m64
+# 	endif
+# endif
 
 CCFLAGS += $(CC_ARCH_FLAGS)
 
