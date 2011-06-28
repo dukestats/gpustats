@@ -33,6 +33,7 @@ def _multivariate_pdf_call(cu_func, data, packed_params, get,
             ndata, dim = data.shape[0], datadim
 
     else:
+
         ndata, dim = data.shape
         padded_data = util.pad_data(data)
 
