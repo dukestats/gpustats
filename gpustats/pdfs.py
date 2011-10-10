@@ -104,14 +104,15 @@ def _univariate_pdf_call(cu_func, data, packed_params, get):
                    util.get_boxes(nparams, params_per))
 
     # see cufiles/univcaller.cu
+
+    gpu_dest = to_gpu(np.zeros((ndata, nparams), dtype=np.float32))
+    gpu_data = data if isinstance(data, GPUArray) else to_gpu(data)
+    gpu_packed_params = to_gpu(packed_params)
+
     design = np.array(((data_per, params_per) + # block design
                        (len(data),) +
                        packed_params.shape), # params spec
                       dtype=np.int32)
-
-    gpu_dest = to_gpu(np.zeros((ndata, nparams), dtype=np.float32, order='F'))
-    gpu_data = data if isinstance(data, GPUArray) else to_gpu(data)
-    gpu_packed_params = to_gpu(packed_params)
 
     cu_func(gpu_dest,
             gpu_data, gpu_packed_params, design[0],
@@ -119,7 +120,10 @@ def _univariate_pdf_call(cu_func, data, packed_params, get):
             block=block_design, grid=grid_design, shared=shared_mem)
 
     if get:
-        return gpu_dest.get()
+        output = gpu_dest.get()
+        if nparams > 1:
+            output = output.reshape((nparams, ndata), order='C').T
+        return output
     else:
         return gpu_dest
 

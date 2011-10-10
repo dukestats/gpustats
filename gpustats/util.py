@@ -88,7 +88,7 @@ def pad_data(data):
 def prep_ndarray(arr):
     # is float32 and contiguous?
     if not arr.dtype == np.float32 or not arr.flags.contiguous:
-        arr = np.array(arr, dtype=np.float32)
+        arr = np.array(arr, dtype=np.float32, order='C')
 
     return arr
 
