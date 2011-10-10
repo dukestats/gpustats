@@ -79,7 +79,7 @@ def _multivariate_pdf_call(cu_func, data, packed_params, get,
     if get:
         output = gpu_dest.get()
         if nparams > 1:
-            output = output.reshape((ndata, nparams), order='C')
+            output = output.reshape((nparams, ndata), order='C').T
         return output
     else:
         return output
