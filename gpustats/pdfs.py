@@ -62,7 +62,7 @@ def _multivariate_pdf_call(cu_func, data, packed_params, get,
         gpu_dest = to_gpu(np.zeros(ndata, dtype=np.float32))
     else:
         gpu_dest = to_gpu(np.zeros((ndata, nparams),
-                                   dtype=np.float32, order='F'))
+                                   dtype=np.float32, order='C'))
 
     # Upload data if not already uploaded
     if not isinstance(padded_data, GPUArray):

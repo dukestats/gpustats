@@ -139,9 +139,9 @@ def tune_blocksize(data, params, func_regs):
                 # can't go any further, have to do less data
                 data_per /= 2
 
-        if data_per == 0:
+        if data_per <=1:
             # we failed somehow. start over
-            data_per = 1
+            data_per = 2
             params_per /= 2
             continue
         else:
