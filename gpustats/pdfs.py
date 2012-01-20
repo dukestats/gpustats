@@ -82,7 +82,7 @@ def _multivariate_pdf_call(cu_func, data, packed_params, get,
             output = output.reshape((nparams, ndata), order='C').T
         return output
     else:
-        return output
+        return gpu_dest
 
 def _univariate_pdf_call(cu_func, data, packed_params, get):
     ndata = len(data)
