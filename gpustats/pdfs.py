@@ -157,7 +157,7 @@ def mvnpdf_multi(data, means, covs, weights=None, logged=True,
     weights : ndarray (length j)
         Multiplier for component j, usually will sum to 1
 
-    get = True leaves the result on the GPU
+    get = False leaves the result on the GPU
     without copying back.
 
     If data has already been padded, the orginal dimension
