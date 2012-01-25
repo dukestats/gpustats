@@ -41,7 +41,10 @@ def sample_discrete(in_densities, logged=False, pad=False,
 
     n, k = densities.shape
 
-    cu_func = cu_module.get_function('sample_measure')
+    if logged:
+        cu_func = cu_module.get_function('sample_discrete_logged')
+    else:
+        cu_func = cu_module.get_function('sample_discrete')
 
     if isinstance(densities, GPUArray):
         gpu_densities = densities
