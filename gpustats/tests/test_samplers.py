@@ -10,30 +10,34 @@ import numpy as np
 import scipy.stats as sp_stats
 
 import gpustats as gps
+import gpustats.sampler as gpusamp
 import gpustats.compat as compat
 import gpustats.util as util
+
+import pdb
 
 DECIMAL_6 = 6
 DECIMAL_5 = 5
 DECIMAL_4 = 4
 DECIMAL_3 = 3
 DECIMAL_2 = 2
+DECIMAL_1 = 1
 
 np.set_printoptions(suppress=True)
 
 def _make_test_densities(n=10000, k=4):
-    dens = randn(4)
+    dens = rand(k)
     densities = [dens.copy() for _ in range(n)]
     return np.asarray(densities)
     #return (densities.T - densities.sum(1)).T
 
 def _compare_discrete(n, k):
     densities = _make_test_densities(n, k)
-    dens = dens[0,:].copy() / dens[0,:].sum()
+    dens = densities[0,:].copy() / densities[0,:].sum()
     expected_mu = np.dot(np.arange(k), dens)
 
-    labels = gpustats.sample_discrete(densities, logged=False)
-    est_mu = labels.mean(0)
+    labels = gpusamp.sample_discrete(densities, logged=False)
+    est_mu = labels.mean()
     return est_mu, expected_mu
 
 def _compare_logged(n, k):
@@ -42,23 +46,23 @@ def _compare_logged(n, k):
     dens = dens / dens.sum()
     expected_mu = np.dot(np.arange(k), dens)
 
-    labels = gpustats.sample_discrete(densities, logged=True)
+    labels = gpusamp.sample_discrete(densities, logged=True)
     est_mu = labels.mean()
     return est_mu, expected_mu
 
 
 class TestDiscreteSampler(unittest.TestCase):
-    test_cases = [(10000, 4),
-                  (10000, 9),
-                  (10000, 16)]
+    test_cases = [(1000000, 4),
+                  (1000000, 9),
+                  (1000000, 16)]
 
     def _check_discrete(self, n, k):
         a, b = _compare_discrete(n, k)
-        assert_almost_equal(a, b, DECIMAL_2)
+        assert_almost_equal(a, b, DECIMAL_1)
 
     def _check_logged(self, n, k):
         a, b = _compare_logged(n, k)
-        assert_almost_equal(a, b, DECIMAL_2)
+        assert_almost_equal(a, b, DECIMAL_1)
 
     def test_discrete(self):
         for n, k in self.test_cases:
@@ -70,5 +74,9 @@ class TestDiscreteSampler(unittest.TestCase):
 
 
 if __name__ == '__main__':
-    pass
+    a, b = _compare_discrete(1000000, 5)
+    print a
+    print b
+
+    
     

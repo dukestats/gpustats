@@ -54,15 +54,17 @@ def sample_discrete(in_densities, logged=False, pad=False,
 
     # setup GPU data
     gpu_random = curand(n)
-    gpu_dest = to_gpu(np.zeros(n, dtype=np.int32))
-    dims = np.array([n,k],dtype=np.int32)
+    gpu_dest = to_gpu(np.zeros(n, dtype=np.float32))
+    dims = np.array([n,k, gpu_densities.shape[1]],dtype=np.int32)
 
     # optimize design ...
-    grid_design, block_design = _tune_sfm(n, k, cu_func.num_regs, logged)
+    grid_design, block_design = _tune_sfm(n, dims[2], cu_func.num_regs)
 
-    shared_mem = 4 * (block_design[0] * block_design[1] + 2 * block_design[1])
-
-    cu_func(gpu_densities, gpu_random, gpu_dest, dims[0], dims[1],
+    shared_mem = 4 * (block_design[0] * gpu_densities.shape[1] + 
+                     1 * block_design[0])
+    
+    cu_func(gpu_densities, gpu_random, gpu_dest, 
+            dims[0], dims[1], dims[2],
             block=block_design, grid=grid_design, shared=shared_mem)
 
     if return_gpuarray:
@@ -70,18 +72,18 @@ def sample_discrete(in_densities, logged=False, pad=False,
     else:
         return gpu_dest.get()
 
-def _tune_sfm(n, k, func_regs ,logged=False):
+def _tune_sfm(n, stride, func_regs):
     """
     Outputs the 'opimal' block and grid configuration
-    for the sample from measure kernel.
+    for the sample discrete kernel.
     """
     from gpustats.util import DeviceInfo
 
     info = DeviceInfo()
     comp_cap = info.compute_cap
-    max_smem = info.shared_mem * 0.9
+    max_smem = info.shared_mem * 0.8
     max_threads = int(info.max_block_threads * 0.5)
-    max_regs = info.max_registers
+    max_regs = 0.9 * info.max_registers
 
     # We want smallest dim possible in x dimsension while
     # still reading mem correctly
@@ -92,33 +94,29 @@ def _tune_sfm(n, k, func_regs ,logged=False):
         xdim = 32
 
 
-    def sfm_config_ok(xdim, ydim, func_regs, max_regs, max_smem, max_threads):
-        ok = 4*(xdim*ydim + 2*ydim) < max_smem and func_regs*ydim*xdim < max_regs
+    def sfm_config_ok(xdim, ydim, stride, func_regs, max_regs, max_smem, max_threads):
+        ok = 4*(xdim*stride + 1*xdim) < max_smem and func_regs*ydim*xdim < max_regs
         return ok and xdim*ydim <= max_threads
 
     ydim = 2
-    while sfm_config_ok(xdim, ydim, func_regs, max_regs, max_smem, max_threads):
+    while sfm_config_ok(xdim, ydim, stride, func_regs, max_regs, max_smem, max_threads):
         ydim += 1
 
     ydim -= 1
 
-    nblocks = int(n/ydim) + 1
+    nblocks = int(n/xdim) + 1
 
     return (nblocks,1), (xdim,ydim,1)
 
 if __name__ == '__main__':
-    n = 20
+
+    n = 100
     k = 5
-    pmfs = np.random.randn(n, k).astype(np.float32)
-    pmfs = (pmfs.T - pmfs.min(1)).T
+    dens = np.log(np.abs(np.random.randn(k))) - 200
+    densities = [dens.copy() for _ in range(n)]
+    dens = np.exp(dens + 200)
+    densities = np.asarray(densities)
 
-    sample_measure = cu_module.get_function('sample_discrete')
-    output = np.zeros(n, dtype=np.int32)
-    unif_draws = curand(n)
-
-    n, k = np.array(pmfs.shape)
-
-    sample_measure(drv.In(pmfs), drv.In(unif_draws), drv.Out(output),
-                   n, k, k,
-                   block=(16, 16, 1), grid=(2, 1),
-                   shared=10000)
+    labels = sample_discrete(densities, logged=True)
+    mu = np.dot(dens / dens.sum(), np.arange(k))
+    print mu, labels.mean()

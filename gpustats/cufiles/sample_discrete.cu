@@ -1,5 +1,5 @@
 /*
-  Block layout : nhelpers x npmfs
+  Block layout : npmfs x nhelpers
   Grid layout : K x 1
   K is the smallest number such that K * npmfs >= pmf_rows
  */
@@ -8,12 +8,12 @@ __global__ void
 k_%(name)s(float* g_pmf, /** Precomputed pmf */
 		   float* g_urand, /** Precomputed random number */
 		   float* g_output, /** Resultant choice */
-		   unsigned int pmf_rows,
-		   unsigned int pmf_cols,
-		   unsigned int pmf_stride
+		   int pmf_rows,
+		   int pmf_cols,
+		   int pmf_stride
   ) {
-  // blockDim.y = number of pmfs sampled from in this block
-  // blockDim.x = number of helper threads per pmf
+  // blockDim.x = number of pmfs sampled from in this block
+  // blockDim.y = number of helper threads per pmf
   unsigned int tid = threadIdx.y * blockDim.x + threadIdx.x;
   unsigned int thidx = threadIdx.x;
   unsigned int npmfs = blockDim.x;

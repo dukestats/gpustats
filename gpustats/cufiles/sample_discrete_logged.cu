@@ -1,104 +1,83 @@
 __global__ void
-k_%(name)s(float* in_measure, /** Precomputed measure */
-		   float* in_random, /** Precomputed random number */
-		   int* out_component, /** Resultant choice */
-		   int iN, int iT) {
+k_%(name)s(float* g_pmf, /** Precomputed logged pmf */
+		   float* g_urand, /** Precomputed random number */
+		   float* g_output, /** Resultant choice */
+		   int pmf_rows,
+		   int pmf_cols,
+		   int pmf_stride
+  ) {
 
-  const int sample_density_block = blockDim.x;
-  const int sample_block = blockDim.y;
-  const int thidx = threadIdx.x;
-  const int thidy = threadIdx.y;
-  const int datumIndex = blockIdx.x * sample_block  + thidy;
-  const int pdfIndex = datumIndex * iT;
-  const int tid = thidy*sample_density_block + thidx;
+  // blockDim.x = number of pmfs sampled from in this block
+  // blockDim.y = number of helper threads per pmf
+  unsigned int tid = threadIdx.y * blockDim.x + threadIdx.x;
+  unsigned int thidx = threadIdx.x;
+  unsigned int npmfs = blockDim.x;
 
   // Make block size flexible ...
   extern __shared__ float shared_data[];
-  float* measure = shared_data; // sample_block by sample_density_block
-  float* sum = measure + sample_block*sample_density_block;
-  float* work = sum + sample_block;
 
-  // use 'work' in multiple places to save on memory
-  if (thidx == 0) {
-    sum[thidy] = 0;
-    work[thidy] = -10000;
-  }
+  float* sh_pmf = shared_data; // npmfs * pmf_stride floats
+  float* sh_work = sh_pmf + npmfs * pmf_stride; // nmpfs floats
 
-  //get the max values
-  for(int chunk = 0; chunk < iT; chunk += sample_density_block) {
-    measure[thidy*sample_block + thidx] = in_measure[pdfIndex + chunk + thidx];
-    __syncthreads();
+  // Move pmf data into shared memory
+  copy_chunks(g_pmf + npmfs * pmf_stride * blockIdx.x,
+			  sh_pmf, tid,
+			  min(npmfs,
+				  pmf_rows - npmfs * blockIdx.x) * pmf_stride);
+  __syncthreads();
 
-    if (thidx == 0) {
-      for(int i=0; i<sample_density_block; i++) {
-    if(chunk + i < iT){
-      float dcurrent = measure[thidy*sample_block + i];
-      if (dcurrent > work[thidy]) {
-        work[thidy] = dcurrent;
-      }
-    }
-      }
-    }
-    __syncthreads();
-  }
+  // move uniform random draws into shared memory
+  copy_chunks(g_urand + npmfs * blockIdx.x,
+			  sh_work, tid,
+			  min(npmfs, pmf_rows - npmfs * blockIdx.x));
+  __syncthreads();
 
+  // done copying, now move pointer to start of pmf for this row of threads
+  sh_pmf = sh_pmf + thidx * pmf_stride;
 
-  //get scaled cummulative pdfs
-  for(int chunk = 0; chunk < iT; chunk += sample_density_block) {
+  if (threadIdx.y == 0 && thidx < pmf_rows - npmfs * blockIdx.x) {
+        // get max
+        float pmf_max = sh_pmf[0]; float cur_val = 0;
+	for (int i = 1; i < pmf_cols; ++i){
+	  cur_val = sh_pmf[i];
+	  pmf_max = fmax(pmf_max, cur_val);
+          //pmf_max = ((pmf_max < cur_val) : (cur_val) , (pmf_max));
+	}
 
-    measure[thidy*sample_block + thidx] = in_measure[pdfIndex + chunk + thidx];
+	// subtract max and exponentiate 
+	float norm_const = 0;
+  	for (int i = 0; i < pmf_cols; ++i) {
+	  sh_pmf[i] = expf(sh_pmf[i] - pmf_max);
+  	  norm_const += sh_pmf[i];
+  	}
 
-    __syncthreads();
+	float draw = sh_work[thidx];
 
-    if (thidx == 0) {
-      for(int i=0; i<sample_density_block; i++) {
-    if (chunk + i < iT){
-      //rescale and exp()
-      sum[thidy] += expf(measure[thidy*sample_block + i] - work[thidy]);
-      measure[thidy*sample_block + i] = sum[thidy];
-    }
-      }
-    }
-
-    if (chunk + thidx < iT)
-      in_measure[pdfIndex + chunk + thidx] = measure[thidy*sample_block + thidx];
-
-    __syncthreads();
-  }
-
-  if (thidx == 0){
-    work[thidy] = 0;
-  }
-
-  float* randomNumber = sum;
-  const int result_id = blockIdx.x * sample_block + tid;
-  if ( tid < sample_block )
-    randomNumber[tid] = in_random[result_id] * sum[tid];
-
-  // Find the right bin for the random number ...
-  for(int chunk = 0; chunk < iT; chunk += sample_density_block) {
-
-    measure[thidy*sample_block + thidx] = in_measure[pdfIndex + chunk + thidx];
-    __syncthreads();
-
-    if (thidx == 0) {
-
-      // storing the index in a float is better because it avoids
-      // bank conflicts ...
-      for(int i=0; i<sample_density_block; i++) {
-    if (chunk + i < iT){
-      if (randomNumber[thidy] > measure[thidy*sample_block + i]){
-        work[thidy] = i + chunk + 1;
-      }
-    }
-      }
-      if ((int) work[thidy] >= iT) {work[thidy] = iT-1;}
-    }
+	// replace with scaled cumulative pdf
+	sh_pmf[0] /= norm_const;
+	if (sh_pmf[0] >= draw) {
+	  sh_work[thidx] = 0;
+	}
+	else {
+	  for(int i = 1; i < pmf_cols; i++) {
+		sh_pmf[i] = sh_pmf[i-1] + sh_pmf[i] / norm_const;
+		if (sh_pmf[i] >= draw) {
+		  sh_work[thidx] = i;
+		  break;
+		}
+	  }
+	}
   }
   __syncthreads();
 
   // this is now coalesced
-  if (result_id < iN && tid < sample_block)
-    out_component[result_id] = (int) work[tid];
+  unsigned int result_id = blockIdx.x * npmfs + tid;
+  if (result_id < pmf_rows && tid < npmfs)
+    g_output[result_id] = sh_work[tid];
 
+  return;
 }
+
+
+
+
