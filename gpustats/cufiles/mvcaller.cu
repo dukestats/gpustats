@@ -52,6 +52,7 @@ __global__ void k_%(name)s(float* g_output,
   __syncthreads();
 
   unsigned int result_idx = data_rows * param_num + obs_num;
+  // unsigned int result_idx = obs_num * data_cols + param_num
 
   // g_output is column-major, so this will then coalesce
   if (obs_num < data_rows & param_num < params_rows) {
