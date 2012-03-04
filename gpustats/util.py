@@ -2,6 +2,12 @@ import numpy as np
 import pycuda.driver as drv
 import pycuda.gpuarray as gpuarray
 import pycuda
+import pycuda.autoinit
+
+from pycuda.compiler import SourceModule
+
+
+
 
 _dev_attr = drv.device_attribute
 
@@ -185,3 +191,51 @@ def get_cufiles_path():
     import os.path as pth
     basepath = pth.abspath(pth.split(__file__)[0])
     return pth.join(basepath, 'cufiles')
+
+
+from pycuda.tools import context_dependent_memoize
+
+@context_dependent_memoize
+def _get_transpose_kernel():
+
+    info = DeviceInfo()
+    if info.max_block_threads >= 1024:
+        t_block_size = 32
+    else:
+        t_block_size = 16
+
+    import os.path as pth
+    mod = SourceModule( 
+        open(pth.join(get_cufiles_path(), "transpose.cu")).read() % { "block_size" : t_block_size })
+
+    func = mod.get_function("transpose")
+    func.prepare("PPii", block=(t_block_size, t_block_size, 1))
+
+    from pytools import Record
+    class TransposeKernelInfo(Record): pass
+
+    return TransposeKernelInfo(func=func, 
+                               block_size=t_block_size,
+                               granularity=t_block_size)
+
+def _transpose(tgt, src):
+    krnl = _get_transpose_kernel()
+    
+    w, h = src.shape
+    assert tgt.shape == (h, w)
+    #assert w % krnl.granularity == 0
+    #assert h % krnl.granularity == 0
+    
+    gw = int(np.ceil(float(w) / krnl.granularity))
+    gh = int(np.ceil(float(h) / krnl.granularity))
+
+    krnl.func.prepared_call(
+        (gw, gh),
+        tgt.gpudata, src.gpudata, w, h)
+
+def transpose(src):
+    w, h = src.shape
+
+    result = gpuarray.empty((h, w), dtype=src.dtype)
+    _transpose(result, src)
+    return result

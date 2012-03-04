@@ -47,7 +47,10 @@ def sample_discrete(in_densities, logged=False, pad=False,
         cu_func = cu_module.get_function('sample_discrete')
 
     if isinstance(densities, GPUArray):
-        gpu_densities = densities
+        if densities.flags.f_contiguous:
+            gpu_densities = util.transpose(densities.reshape(k, n, 'C'))
+        else:
+            gpu_densities = densities
     else:
         densities = util.prep_ndarray(densities)
         gpu_densities = to_gpu(densities)
