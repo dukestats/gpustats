@@ -18,20 +18,23 @@
 
         // Global indices in A and A_t
         int glob_idx_a = base_idx_a + threadIdx.x + a_width * threadIdx.y;
-	int y_pos = blockIdx.y * BLOCK_SIZE + threadIdx.y;
-	int x_pos = blockIdx.x * BLOCK_SIZE + threadIdx.x;
         int glob_idx_a_t = base_idx_a_t + threadIdx.x + a_height * threadIdx.y;
+
+	int a_x_pos = blockIdx.x * BLOCK_SIZE + threadIdx.x;
+	int a_y_pos = blockIdx.y * BLOCK_SIZE + threadIdx.y;
+	int at_x_pos = blockIdx.y * BLOCK_SIZE + threadIdx.x;
+	int at_y_pos = blockIdx.x * BLOCK_SIZE + threadIdx.y;
 
         __shared__ float A_shared[BLOCK_SIZE][BLOCK_SIZE+1];
 
-	if( x_pos < a_width && y_pos < a_height ){
+	if( a_x_pos < a_width && a_y_pos < a_height ){
             // Store transposed submatrix to shared memory
             A_shared[threadIdx.y][threadIdx.x] = A[glob_idx_a];
-          
-          __syncthreads();
-
-          // Write transposed submatrix to global memory
-          A_t[glob_idx_a_t] = A_shared[threadIdx.x][threadIdx.y];
+        }          
+        __syncthreads();
+        if( at_x_pos < a_height && at_y_pos < a_width ){
+            // Write transposed submatrix to global memory
+            A_t[glob_idx_a_t] = A_shared[threadIdx.x][threadIdx.y];
 	}
 
     }

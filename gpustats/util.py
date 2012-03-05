@@ -221,8 +221,8 @@ def _get_transpose_kernel():
 def _transpose(tgt, src):
     krnl = _get_transpose_kernel()
     
-    w, h = src.shape
-    assert tgt.shape == (h, w)
+    h, w = src.shape
+    assert tgt.shape == (w, h)
     #assert w % krnl.granularity == 0
     #assert h % krnl.granularity == 0
     
@@ -234,8 +234,8 @@ def _transpose(tgt, src):
         tgt.gpudata, src.gpudata, w, h)
 
 def transpose(src):
-    w, h = src.shape
+    h, w = src.shape
 
-    result = gpuarray.empty((h, w), dtype=src.dtype)
+    result = gpuarray.empty((w, h), dtype=src.dtype)
     _transpose(result, src)
     return result
