@@ -48,6 +48,7 @@ def _compare_logged(n, k):
 
     labels = gpusamp.sample_discrete(densities, logged=True)
     est_mu = labels.mean()
+    pdb.set_trace()
     return est_mu, expected_mu
 
 
@@ -74,7 +75,7 @@ class TestDiscreteSampler(unittest.TestCase):
 
 
 if __name__ == '__main__':
-    a, b = _compare_discrete(1000000, 5)
+    a, b = _compare_logged(1000000, 16)
     print a
     print b
 

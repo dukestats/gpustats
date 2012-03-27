@@ -6,7 +6,38 @@ import pycuda.autoinit
 
 from pycuda.compiler import SourceModule
 
+def GPUarray_reshape(garray, shape=None, order="C"):
+    if shape is None:
+        shape = garray.shape
+    return gpuarray.GPUArray(
+        shape=shape,
+        dtype=garray.dtype,
+        allocator=garray.allocator,
+        base=garray,
+        gpudata=int(garray.gpudata),
+        order=order)
 
+def GPUarray_order(garray, order="F"):
+    """
+    will set the order of garray in place
+    """
+    if order=="F":
+        if garray.flags.f_contiguous:
+            exit
+        else:
+            garray.strides = gpuarray._f_contiguous_strides(
+                garray.dtype.itemsize, garray.shape)
+            garray.flags.f_contiguous = True
+            garray.flags.c_contiguous = False
+    elif order=="C":
+        if garray.flags.c_contiguous:
+            exit
+        else:
+            garray.strides = gpuarray._c_contiguous_strides(
+                garray.dtype.itemsize, garray.shape)
+            garray.flags.c_contiguous = True
+            garray.flags.f_contiguous = False
+            
 
 
 _dev_attr = drv.device_attribute
