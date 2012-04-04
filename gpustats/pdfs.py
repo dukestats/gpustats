@@ -90,7 +90,7 @@ def _multivariate_pdf_call(cu_func, data, packed_params, get, order,
             return gpu_dest
         else:
             return gpu_transpose(
-                utils.GPUarray_reshape(gpu_dest, (nparams, ndata), "C"))
+                util.GPUarray_reshape(gpu_dest, (nparams, ndata), "C"))
             #return gpu_transpose(gpu_dest.reshape(nparams, ndata, 'C'))
 
 def _univariate_pdf_call(cu_func, data, packed_params, get):
