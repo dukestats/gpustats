@@ -56,7 +56,8 @@ def sample_discrete(in_densities, logged=False, pad=False,
         gpu_densities = to_gpu(densities)
 
     # setup GPU data
-    gpu_random = curand(n)
+    #gpu_random = curand(n)
+    gpu_random = to_gpu(np.asarray(np.random.rand(n), dtype=np.float32))
     gpu_dest = to_gpu(np.zeros(n, dtype=np.float32))
     dims = np.array([n,k, gpu_densities.shape[1]],dtype=np.int32)
 
@@ -80,9 +81,9 @@ def _tune_sfm(n, stride, func_regs):
     Outputs the 'opimal' block and grid configuration
     for the sample discrete kernel.
     """
-    from gpustats.util import DeviceInfo
+    from gpustats.util import info
 
-    info = DeviceInfo()
+    #info = DeviceInfo()
     comp_cap = info.compute_cap
     max_smem = info.shared_mem * 0.8
     max_threads = int(info.max_block_threads * 0.5)

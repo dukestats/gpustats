@@ -41,12 +41,13 @@ def GPUarray_order(garray, order="F"):
 
 
 _dev_attr = drv.device_attribute
-
+## TO DO: should be different for each device .. assumes they are the same
 class DeviceInfo(object):
 
     def __init__(self):
-        self._dev = pycuda.autoinit.device
+        #self._dev = pycuda.autoinit.device
         #self._dev = drv.Device(dev)
+        self._dev = drv.Context.get_device()
         self._attr = self._dev.get_attributes()
 
         self.max_block_threads = self._attr[_dev_attr.MAX_THREADS_PER_BLOCK]
@@ -54,6 +55,8 @@ class DeviceInfo(object):
         self.warp_size = self._attr[_dev_attr.WARP_SIZE]
         self.max_registers = self._attr[_dev_attr.MAX_REGISTERS_PER_BLOCK]
         self.compute_cap = self._dev.compute_capability()
+
+info = DeviceInfo()
 
 HALF_WARP = 16
 
@@ -146,9 +149,7 @@ def tune_blocksize(data, params, func_regs):
     -------
     (data_per, params_per) : (int, int)
     """
-    # TODO: how to figure out active device in this thread for the multigpu
-    # case?
-    info = DeviceInfo()
+    #info = DeviceInfo()
 
     max_smem = info.shared_mem * 0.9
     max_threads = int(info.max_block_threads * 0.5)
@@ -229,7 +230,7 @@ from pycuda.tools import context_dependent_memoize
 @context_dependent_memoize
 def _get_transpose_kernel():
 
-    info = DeviceInfo()
+    #info = DeviceInfo()
     if info.max_block_threads >= 1024:
         t_block_size = 32
     else:
