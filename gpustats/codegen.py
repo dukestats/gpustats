@@ -21,13 +21,15 @@ class CUDAModule(object):
 
         self.all_code = self._get_full_source()
         try:
-            self.pycuda_module = SourceModule(self.all_code)
+            #self.pycuda_module = SourceModule(self.all_code)
+            # dictionary mapping contexts to their respective loaded code modules
+            self.pycuda_modules = { drv.Context.get_current() : SourceModule(self.all_code) }
         except Exception:
             f = open('foo.cu', 'w')
             print >> f, self.all_code
             f.close()
             raise
-        self.curDevice = drv.Context.get_device()
+        #self.curDevice = drv.Context.get_device()
 
     def _get_full_source(self):
         formatted_kernels = [kern.get_code()
@@ -35,12 +37,20 @@ class CUDAModule(object):
         return '\n'.join([self.support_code] + formatted_kernels)
 
     def get_function(self, name):
-        # check to see if the device has changed
-        curDevice = drv.Context.get_device()
-        if self.curDevice != curDevice:
-            self.pycuda_module = SourceModule(self.all_code)
-            self.curDevice = curDevice
-        return self.pycuda_module.get_function('k_%s' % name)
+        # get the module for this context
+        context = drv.Context.get_current()
+        try:
+            mod = self.pycuda_modules[context]
+        except KeyError:
+            # if it's a new context, init the module
+            self.pycuda_modules[context] = SourceModule(self.all_code)
+            mod = self.pycuda_modules[context]
+        return mod.get_function('k_%s' % name)
+        #curDevice = drv.Context.get_device()
+        #if self.curDevice != curDevice:
+        #    self.pycuda_module = SourceModule(self.all_code)
+        #    self.curDevice = curDevice
+        #return self.pycuda_module.get_function('k_%s' % name)
 
 def _get_support_code():
     path = os.path.join(get_cufiles_path(), 'support.cu')
