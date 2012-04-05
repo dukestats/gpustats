@@ -27,6 +27,7 @@ class CUDAModule(object):
             print >> f, self.all_code
             f.close()
             raise
+        self.curDevice = drv.Context.get_device()
 
     def _get_full_source(self):
         formatted_kernels = [kern.get_code()
@@ -34,6 +35,11 @@ class CUDAModule(object):
         return '\n'.join([self.support_code] + formatted_kernels)
 
     def get_function(self, name):
+        # check to see if the device has changed
+        curDevice = drv.Context.get_device()
+        if self.curDevice != curDevice:
+            self.pycuda_module = SourceModule(self.all_code)
+            self.curDevice = curDevice
         return self.pycuda_module.get_function('k_%s' % name)
 
 def _get_support_code():

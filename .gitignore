@@ -4,3 +4,6 @@
 *.cu_o
 bin
 obj
+build
+*~
+foo.cu
