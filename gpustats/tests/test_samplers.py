@@ -14,8 +14,6 @@ import gpustats.sampler as gpusamp
 import gpustats.compat as compat
 import gpustats.util as util
 
-import pdb
-
 DECIMAL_6 = 6
 DECIMAL_5 = 5
 DECIMAL_4 = 4
@@ -48,14 +46,13 @@ def _compare_logged(n, k):
 
     labels = gpusamp.sample_discrete(densities, logged=True)
     est_mu = labels.mean()
-    pdb.set_trace()
     return est_mu, expected_mu
 
 
 class TestDiscreteSampler(unittest.TestCase):
-    test_cases = [(1000000, 4),
-                  (1000000, 9),
-                  (1000000, 16)]
+    test_cases = [(100000, 4),
+                  (100000, 9),
+                  (100000, 16)]
 
     def _check_discrete(self, n, k):
         a, b = _compare_discrete(n, k)
@@ -75,7 +72,7 @@ class TestDiscreteSampler(unittest.TestCase):
 
 
 if __name__ == '__main__':
-    a, b = _compare_logged(1000000, 16)
+    a, b = _compare_logged(100000, 16)
     print a
     print b
 

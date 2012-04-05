@@ -188,7 +188,7 @@ def mvnpdf_multi(data, means, covs, weights=None, logged=True,
     assert(len(covs) == len(means))
 
     ichol_sigmas = [LA.inv(chol(c)) for c in covs]
-    logdets = [np.log(LA.det(c)) for c in covs]
+    logdets = [-2.0*np.log(c.diagonal()).sum() for c in ichol_sigmas]
 
     if weights is None:
         weights = np.ones(len(means))
