@@ -245,7 +245,6 @@ def _get_transpose_kernel():
 
     from pytools import Record
     class TransposeKernelInfo(Record): pass
-
     return TransposeKernelInfo(func=func, 
                                block_size=t_block_size,
                                granularity=t_block_size)
@@ -265,9 +264,11 @@ def _transpose(tgt, src):
         (gw, gh),
         tgt.gpudata, src.gpudata, w, h)
 
+
 def transpose(src):
     h, w = src.shape
 
     result = gpuarray.empty((w, h), dtype=src.dtype)
     _transpose(result, src)
+    del src
     return result

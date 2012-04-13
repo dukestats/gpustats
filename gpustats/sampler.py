@@ -48,7 +48,8 @@ def sample_discrete(in_densities, logged=False, pad=False,
 
     if isinstance(densities, GPUArray):
         if densities.flags.f_contiguous:
-            gpu_densities = util.transpose(densities.reshape(k, n, 'C'))
+            densities.reshape(k, n, 'C')
+            gpu_densities = util.transpose(densities)
         else:
             gpu_densities = densities
     else:
@@ -71,10 +72,13 @@ def sample_discrete(in_densities, logged=False, pad=False,
             dims[0], dims[1], dims[2],
             block=block_design, grid=grid_design, shared=shared_mem)
 
+    gpu_random.gpudata.free()
     if return_gpuarray:
         return gpu_dest
     else:
-        return gpu_dest.get()
+        res = gpu_dest.get()
+        gpu_dest.gpudata.free()
+        return res
 
 def _tune_sfm(n, stride, func_regs):
     """

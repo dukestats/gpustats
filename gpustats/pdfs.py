@@ -76,6 +76,7 @@ def _multivariate_pdf_call(cu_func, data, packed_params, get, order,
     kwds = dict(block=block_design, grid=grid_design, shared=shared_mem)
     cu_func(*params, **kwds)
 
+    gpu_packed_params.gpudata.free()
     if get:
         if order=='F':
             return gpu_dest.get()
@@ -89,8 +90,9 @@ def _multivariate_pdf_call(cu_func, data, packed_params, get, order,
         if order=='F' or nparams==1:
             return gpu_dest
         else:
-            return gpu_transpose(
-                util.GPUarray_reshape(gpu_dest, (nparams, ndata), "C"))
+            res = gpu_transpose(util.GPUarray_reshape(gpu_dest, (nparams, ndata), "C"))
+            gpu_dest.gpudata.free()
+            return res
             #return gpu_transpose(gpu_dest.reshape(nparams, ndata, 'C'))
 
 def _univariate_pdf_call(cu_func, data, packed_params, get):
