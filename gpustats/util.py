@@ -2,8 +2,9 @@ import numpy as np
 import pycuda.driver as drv
 import pycuda.gpuarray as gpuarray
 import pycuda
-import pycuda.autoinit
-
+drv.init()
+if drv.Context.get_current() is None:
+    import pycuda.autoinit
 from pycuda.compiler import SourceModule
 
 def GPUarray_reshape(garray, shape=None, order="C"):
@@ -55,6 +56,8 @@ class DeviceInfo(object):
         self.warp_size = self._attr[_dev_attr.WARP_SIZE]
         self.max_registers = self._attr[_dev_attr.MAX_REGISTERS_PER_BLOCK]
         self.compute_cap = self._dev.compute_capability()
+        self.max_grid_dim = (self._attr[_dev_attr.MAX_GRID_DIM_X],
+                             self._attr[_dev_attr.MAX_GRID_DIM_Y])
 
 info = DeviceInfo()
 
@@ -259,6 +262,12 @@ def _transpose(tgt, src):
     
     gw = int(np.ceil(float(w) / krnl.granularity))
     gh = int(np.ceil(float(h) / krnl.granularity))
+    gz = int(1)
+
+    ### 3D grids are needed for larger data ... should be comming soon ...
+    #while gw > info.max_grid_dim[0]:
+    #    gz += 1
+    #    gw = int(np.ceil(float(w) / (gz * krnl.granularity) ))
 
     krnl.func.prepared_call(
         (gw, gh),

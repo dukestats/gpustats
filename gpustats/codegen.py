@@ -1,6 +1,10 @@
 import pycuda.driver as drv
 import pycuda.tools
-import pycuda.autoinit
+#import pycuda.autoinit
+drv.init()
+if drv.Context.get_current() is None:
+    import pycuda.autoinit
+
 import numpy
 import numpy.linalg as la
 import os
