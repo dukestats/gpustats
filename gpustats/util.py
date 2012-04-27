@@ -7,6 +7,63 @@ if drv.Context.get_current() is None:
     import pycuda.autoinit
 from pycuda.compiler import SourceModule
 
+def threadSafeInit(device = 0):
+    """
+    If gpustats (or any other pycuda work) is used inside a 
+    multiprocessing.Process, this function must be used inside the
+    thread to clean up invalid contexts and create a new one on the 
+    given device. Assumes one GPU per thread.
+    """
+
+    import atexit
+    drv.init() # just in case
+
+    ## clean up all contexts. most will be invalid from
+    ## multiprocessing fork
+    import os; import sys
+    clean = False
+    while not clean:
+        _old_ctx = drv.Context.get_current()
+        if _old_ctx is None:
+            clean = True
+        else:
+            ## detach: will give warnings to stderr if invalid
+            _old_cerr = os.dup(sys.stderr.fileno())
+            _nl = os.open(os.devnull, os.O_RDWR)
+            os.dup2(_nl, sys.stderr.fileno())
+            _old_ctx.detach() 
+            sys.stderr = os.fdopen(_old_cerr, "w")
+    from pycuda.tools import clear_context_caches
+    clear_context_caches()
+        
+    ## init a new device
+    dev = drv.Device(device)
+    ctx = dev.make_context()
+
+    ## pycuda.autoinit exitfunc is bad now .. delete it
+    exit_funcs = atexit._exithandlers
+    for fn in exit_funcs:
+        if fn[0].func_name == '_finish_up':
+            exit_funcs.remove(fn)
+        if fn[0].func_name == 'clean_all_contexts': # avoid duplicates
+            exit_funcs.remove(fn)
+
+    ## make sure we clean again on exit
+    atexit.register(clean_all_contexts)
+
+
+def clean_all_contexts():
+
+    ctx = True
+    while ctx is not None:
+        ctx = drv.Context.get_current()
+        if ctx is not None:
+            ctx.detach()
+
+    from pycuda.tools import clear_context_caches
+    clear_context_caches()
+    
+
 def GPUarray_reshape(garray, shape=None, order="C"):
     if shape is None:
         shape = garray.shape
