@@ -33,6 +33,7 @@ def threadSafeInit(device = 0):
             os.dup2(_nl, sys.stderr.fileno())
             _old_ctx.detach() 
             sys.stderr = os.fdopen(_old_cerr, "w")
+            os.close(_nl)
     from pycuda.tools import clear_context_caches
     clear_context_caches()
         
@@ -43,10 +44,11 @@ def threadSafeInit(device = 0):
     ## pycuda.autoinit exitfunc is bad now .. delete it
     exit_funcs = atexit._exithandlers
     for fn in exit_funcs:
-        if fn[0].func_name == '_finish_up':
-            exit_funcs.remove(fn)
-        if fn[0].func_name == 'clean_all_contexts': # avoid duplicates
-            exit_funcs.remove(fn)
+        if hasattr(fn, 'func_name'):
+            if fn[0].func_name == '_finish_up':
+                exit_funcs.remove(fn)
+            if fn[0].func_name == 'clean_all_contexts': # avoid duplicates
+                exit_funcs.remove(fn)
 
     ## make sure we clean again on exit
     atexit.register(clean_all_contexts)
