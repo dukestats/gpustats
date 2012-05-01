@@ -44,7 +44,7 @@ def threadSafeInit(device = 0):
     ## pycuda.autoinit exitfunc is bad now .. delete it
     exit_funcs = atexit._exithandlers
     for fn in exit_funcs:
-        if hasattr(fn, 'func_name'):
+        if hasattr(fn[0], 'func_name'):
             if fn[0].func_name == '_finish_up':
                 exit_funcs.remove(fn)
             if fn[0].func_name == 'clean_all_contexts': # avoid duplicates
@@ -303,33 +303,38 @@ def _get_transpose_kernel():
         open(pth.join(get_cufiles_path(), "transpose.cu")).read() % { "block_size" : t_block_size })
 
     func = mod.get_function("transpose")
-    func.prepare("PPii", block=(t_block_size, t_block_size, 1))
+    func.prepare("PPii") #, block=(t_block_size, t_block_size, 1))
+    return t_block_size, func
+    
 
-    from pytools import Record
-    class TransposeKernelInfo(Record): pass
-    return TransposeKernelInfo(func=func, 
-                               block_size=t_block_size,
-                               granularity=t_block_size)
+    #from pytools import Record
+    #class TransposeKernelInfo(Record): pass
+    #return TransposeKernelInfo(func=func, 
+    #                           block_size=t_block_size,
+    #                           granularity=t_block_size)
+    
 
 def _transpose(tgt, src):
-    krnl = _get_transpose_kernel()
+    block_size, func = _get_transpose_kernel()
     
+
     h, w = src.shape
     assert tgt.shape == (w, h)
-    #assert w % krnl.granularity == 0
-    #assert h % krnl.granularity == 0
+    #assert w % block_size == 0
+    #assert h % block_size == 0
     
-    gw = int(np.ceil(float(w) / krnl.granularity))
-    gh = int(np.ceil(float(h) / krnl.granularity))
+    gw = int(np.ceil(float(w) / block_size))
+    gh = int(np.ceil(float(h) / block_size))
     gz = int(1)
 
     ### 3D grids are needed for larger data ... should be comming soon ...
     #while gw > info.max_grid_dim[0]:
     #    gz += 1
-    #    gw = int(np.ceil(float(w) / (gz * krnl.granularity) ))
+    #    gw = int(np.ceil(float(w) / (gz * block_size) ))
 
-    krnl.func.prepared_call(
+    func.prepared_call(
         (gw, gh),
+        (block_size, block_size, 1),
         tgt.gpudata, src.gpudata, w, h)
 
 
