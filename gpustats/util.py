@@ -32,7 +32,7 @@ def threadSafeInit(device = 0):
             _nl = os.open(os.devnull, os.O_RDWR)
             os.dup2(_nl, sys.stderr.fileno())
             _old_ctx.detach() 
-            sys.stderr = os.fdopen(_old_cerr, "w")
+            sys.stderr = os.fdopen(_old_cerr, "wb")
             os.close(_nl)
     from pycuda.tools import clear_context_caches
     clear_context_caches()
