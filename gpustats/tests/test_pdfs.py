@@ -64,7 +64,8 @@ class TestMVN(unittest.TestCase):
                   (1000, 14, 32),
                   (1000, 16, 32),
                   (250, 25, 32),
-                  (10, 15, 2)]
+                  (10, 15, 2),
+                  (500000, 2, 128)]
 
     def _check_multi(self, n, k, p):
         a, b = _compare_multi(n, k, p)
@@ -111,4 +112,5 @@ class TestUnivariate(unittest.TestCase):
 
 if __name__ == '__main__':
     # nose.runmodule(argv=['', '--pdb', '-v', '--pdb-failure'])
+    _compare_multi(500000, 4, 128)
     pass

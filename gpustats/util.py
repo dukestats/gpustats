@@ -216,12 +216,15 @@ def tune_blocksize(data, params, func_regs):
     max_smem = info.shared_mem * 0.9
     max_threads = int(info.max_block_threads * 0.5)
     max_regs = info.max_registers
+    max_grid = int(info.max_grid_dim[0])
 
     params_per = max_threads
     if (len(params) < params_per):
         params_per = _next_pow2(len(params), info.max_block_threads)
 
-    data_per = max_threads / params_per
+    data_per0 = max( max_threads / params_per, data.shape[0] / max_grid )
+    min_data_per = data.shape[0] / max_grid
+    data_per = data_per0
 
     def _can_fit(data_per, params_per):
         ok = compute_shmem(data, params, data_per, params_per) <= max_smem
@@ -229,7 +232,7 @@ def tune_blocksize(data, params, func_regs):
 
     while True:
         while not _can_fit(data_per, params_per):
-            if data_per <= 1:
+            if data_per <= min_data_per:
                 break
 
             if params_per > 1:
@@ -239,9 +242,9 @@ def tune_blocksize(data, params, func_regs):
                 # can't go any further, have to do less data
                 data_per /= 2
 
-        if data_per <=1:
+        if data_per <= min_data_per:
             # we failed somehow. start over
-            data_per = 2
+            data_per = 2 * data_per0
             params_per /= 2
             continue
         else:
