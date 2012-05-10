@@ -228,6 +228,7 @@ def tune_blocksize(data, params, func_regs):
 
     def _can_fit(data_per, params_per):
         ok = compute_shmem(data, params, data_per, params_per) <= max_smem
+        ok = ok and data_per*params_per < max_threads
         return ok and func_regs*data_per*params_per <= max_regs
 
     while True:
@@ -251,11 +252,11 @@ def tune_blocksize(data, params, func_regs):
             break
 
     while _can_fit(2 * data_per, params_per):
-        if 2 * data_per * params_per < max_threads:
+        #if 2 * data_per * params_per < max_threads:
             data_per *= 2
-        else:
+        #else:
             # hit block size limit
-            break
+        #    break
 
     return data_per, params_per
 

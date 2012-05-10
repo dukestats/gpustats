@@ -45,7 +45,8 @@ def _multivariate_pdf_call(cu_func, data, packed_params, get, order,
                                                func_regs)
 
     blocksize = data_per * params_per
-
+    #print 'the blocksize is ' + str(blocksize)
+    #print 'data_per ' + str(data_per) + '. params_per ' + str(params_per)
     shared_mem = util.compute_shmem(padded_data, packed_params,
                                     data_per, params_per)
     block_design = (data_per * params_per, 1, 1)
