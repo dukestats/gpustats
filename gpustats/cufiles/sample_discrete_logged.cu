@@ -55,10 +55,8 @@ k_%(name)s(float* g_pmf, /** Precomputed logged pmf */
 
 	// replace with scaled cumulative pdf
 	sh_pmf[0] /= norm_const;
-	if (sh_pmf[0] >= draw) {
-	  sh_work[thidx] = 0;
-	}
-	else {
+	sh_work[thidx] = 0;
+	if (sh_pmf[0] < draw) {
 	  for(int i = 1; i < pmf_cols; i++) {
 		sh_pmf[i] = sh_pmf[i-1] + sh_pmf[i] / norm_const;
 		if (sh_pmf[i] >= draw) {

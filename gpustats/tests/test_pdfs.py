@@ -65,7 +65,7 @@ class TestMVN(unittest.TestCase):
                   (1000, 16, 32),
                   (250, 25, 32),
                   (10, 15, 2),
-                  (500000, 2, 128)]
+                  (500000, 5, 128)]
 
     def _check_multi(self, n, k, p):
         a, b = _compare_multi(n, k, p)
