@@ -218,17 +218,17 @@ def tune_blocksize(data, params, func_regs):
     max_regs = info.max_registers
     max_grid = int(info.max_grid_dim[0])
 
-    params_per = max_threads
+    params_per = 64#max_threads
     if (len(params) < params_per):
         params_per = _next_pow2(len(params), info.max_block_threads)
 
-    data_per0 = max( max_threads / params_per, data.shape[0] / max_grid )
-    min_data_per = data.shape[0] / max_grid
+    min_data_per = data.shape[0] / max_grid;
+    data_per0 = _next_pow2( max( max_threads / params_per, min_data_per ), 512);
     data_per = data_per0
 
     def _can_fit(data_per, params_per):
         ok = compute_shmem(data, params, data_per, params_per) <= max_smem
-        ok = ok and data_per*params_per < max_threads
+        ok = ok and data_per*params_per <= max_threads
         return ok and func_regs*data_per*params_per <= max_regs
 
     while True:
@@ -258,6 +258,7 @@ def tune_blocksize(data, params, func_regs):
             # hit block size limit
         #    break
 
+    #import pdb; pdb.set_trace()
     return data_per, params_per
 
 def get_boxes(n, box_size):
