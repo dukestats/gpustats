@@ -10,7 +10,8 @@ k_%(name)s(float* g_pmf, /** Precomputed pmf */
 		   float* g_output, /** Resultant choice */
 		   int pmf_rows,
 		   int pmf_cols,
-		   int pmf_stride
+		   int pmf_stride,
+		   int sh_stride
   ) {
   // blockDim.x = number of pmfs sampled from in this block
   // blockDim.y = number of helper threads per pmf
@@ -21,14 +22,14 @@ k_%(name)s(float* g_pmf, /** Precomputed pmf */
   // Make block size flexible ...
   extern __shared__ float shared_data[];
 
-  float* sh_pmf = shared_data; // npmfs * pmf_stride floats
-  float* sh_work = sh_pmf + npmfs * pmf_stride; // nmpfs floats
+  float* sh_pmf = shared_data; // npmfs * sh_stride floats
+  float* sh_work = sh_pmf + npmfs * sh_stride; // nmpfs floats
 
   // Move pmf data into shared memory
-  copy_chunks(g_pmf + npmfs * pmf_stride * blockIdx.x,
-			  sh_pmf, tid,
-			  min(npmfs,
-				  pmf_rows - npmfs * blockIdx.x) * pmf_stride);
+  copy_chunks_strided(g_pmf + npmfs * pmf_stride * blockIdx.x,
+			  sh_pmf, tid, pmf_stride,
+			  min(npmfs, pmf_rows - npmfs * blockIdx.x), 
+			  sh_stride);
   __syncthreads();
 
   // move uniform random draws into shared memory
@@ -38,7 +39,7 @@ k_%(name)s(float* g_pmf, /** Precomputed pmf */
   __syncthreads();
 
   // done copying, now move pointer to start of pmf for this row of threads
-  sh_pmf = sh_pmf + thidx * pmf_stride;
+  sh_pmf = sh_pmf + thidx * sh_stride;
 
   // compute normalizing constant using atomic operators?
 

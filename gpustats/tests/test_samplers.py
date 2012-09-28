@@ -72,7 +72,7 @@ class TestDiscreteSampler(unittest.TestCase):
 
 
 if __name__ == '__main__':
-    a, b = _compare_logged(100000, 16)
+    a, b = _compare_discrete(1000000, 40)
     print a
     print b
 

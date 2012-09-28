@@ -60,16 +60,20 @@ def sample_discrete(in_densities, logged=False, pad=False,
     #gpu_random = curand(n)
     gpu_random = to_gpu(np.asarray(np.random.rand(n), dtype=np.float32))
     gpu_dest = to_gpu(np.zeros(n, dtype=np.float32))
-    dims = np.array([n,k, gpu_densities.shape[1]],dtype=np.int32)
+    stride = gpu_densities.shape[1]
+    if stride % 2 == 0:
+        stride += 1
+    dims = np.array([n,k, gpu_densities.shape[1], stride],dtype=np.int32)
+
 
     # optimize design ...
-    grid_design, block_design = _tune_sfm(n, dims[2], cu_func.num_regs)
+    grid_design, block_design = _tune_sfm(n, stride, cu_func.num_regs)
 
-    shared_mem = 4 * (block_design[0] * gpu_densities.shape[1] + 
+    shared_mem = 4 * (block_design[0] * stride + 
                      1 * block_design[0])
-    
+
     cu_func(gpu_densities, gpu_random, gpu_dest, 
-            dims[0], dims[1], dims[2],
+            dims[0], dims[1], dims[2], dims[3],
             block=block_design, grid=grid_design, shared=shared_mem)
 
     gpu_random.gpudata.free()
