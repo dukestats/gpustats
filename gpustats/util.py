@@ -2,6 +2,7 @@ import numpy as np
 import pycuda.driver as drv
 import pycuda.gpuarray as gpuarray
 import pycuda
+import scipy.linalg as LA
 drv.init()
 if drv.Context.get_current() is None:
     import pycuda.autoinit
@@ -123,8 +124,8 @@ info = DeviceInfo()
 HALF_WARP = 16
 
 def random_cov(dim):
-    from pymc.distributions import rinverse_wishart
-    return rinverse_wishart(dim, np.eye(dim))
+    from pymc.distributions import rwishart
+    return LA.inv(rwishart(dim, np.eye(dim)))
 
 def unvech(v):
     # quadratic formula, correct fp error
