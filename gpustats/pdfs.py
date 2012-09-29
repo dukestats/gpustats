@@ -4,6 +4,7 @@ import numpy as np
 import numpy.linalg as LA
 
 from pycuda.gpuarray import GPUArray, to_gpu
+from pycuda.gpuarray import empty as gpu_empty
 import gpustats.kernels as kernels
 import gpustats.codegen as codegen
 from gpustats.util import transpose as gpu_transpose
@@ -38,7 +39,6 @@ def _multivariate_pdf_call(cu_func, data, packed_params, get, order,
         ndata, dim = data.shape
         padded_data = util.pad_data(data)
 
-
     nparams = len(packed_params)
     data_per, params_per = util.tune_blocksize(padded_data,
                                                packed_params,
@@ -61,9 +61,11 @@ def _multivariate_pdf_call(cu_func, data, packed_params, get, order,
                       dtype=np.int32)
 
     if nparams == 1:
-        gpu_dest = to_gpu(np.zeros(ndata, dtype=np.float32))
+        gpu_dest = gpu_empty(ndata, dtype=np.float32)
+        #gpu_dest = to_gpu(np.zeros(ndata, dtype=np.float32))
     else:
-        gpu_dest = to_gpu(np.zeros((ndata, nparams), dtype=np.float32, order='F'))
+        gpu_dest = gpu_empty((ndata, nparams), dtype=np.float32, order='F')
+        #gpu_dest = to_gpu(np.zeros((ndata, nparams), dtype=np.float32, order='F'))
 
     # Upload data if not already uploaded
     if not isinstance(padded_data, GPUArray):
@@ -117,7 +119,8 @@ def _univariate_pdf_call(cu_func, data, packed_params, get):
 
     # see cufiles/univcaller.cu
 
-    gpu_dest = to_gpu(np.zeros((ndata, nparams), dtype=np.float32))
+    #gpu_dest = to_gpu(np.zeros((ndata, nparams), dtype=np.float32))
+    gpu_dest = gpu_empty((ndata, nparams), dtype=np.float32)
     gpu_data = data if isinstance(data, GPUArray) else to_gpu(data)
     gpu_packed_params = to_gpu(packed_params)
 

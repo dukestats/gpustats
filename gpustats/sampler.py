@@ -5,6 +5,7 @@ import gpustats.codegen as codegen
 import gpustats.util as util
 import pycuda.driver as drv
 from pycuda.gpuarray import GPUArray, to_gpu
+from pycuda.gpuarray import empty as gpu_empty
 from pycuda.curandom import rand as curand
 
 # reload(kernels)
@@ -59,7 +60,8 @@ def sample_discrete(in_densities, logged=False, pad=False,
     # setup GPU data
     #gpu_random = curand(n)
     gpu_random = to_gpu(np.asarray(np.random.rand(n), dtype=np.float32))
-    gpu_dest = to_gpu(np.zeros(n, dtype=np.float32))
+    #gpu_dest = to_gpu(np.zeros(n, dtype=np.float32))
+    gpu_dest = gpu_empty(n, dtype=np.float32)
     stride = gpu_densities.shape[1]
     if stride % 2 == 0:
         stride += 1

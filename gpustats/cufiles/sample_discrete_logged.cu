@@ -66,15 +66,18 @@ k_%(name)s(float* g_pmf, /** Precomputed logged pmf */
 		}
 	  }
 	}
+
+	// write
+	g_output[blockIdx.x*npmfs + thidx] = sh_work[thidx];
+
   }
-  __syncthreads();
+//  __syncthreads();
 
   // this is now coalesced
-  unsigned int result_id = blockIdx.x * npmfs + tid;
-  if (result_id < pmf_rows && tid < npmfs)
-    g_output[result_id] = sh_work[tid];
+//  unsigned int result_id = blockIdx.x * npmfs + tid;
+//  if (result_id < pmf_rows && tid < npmfs)
+//    g_output[result_id] = sh_work[tid];
 
-  return;
 }
 
 
