@@ -43,11 +43,11 @@ __device__ float %(name)s(float* x, float* params) {
 log_pdf_normal = DensityKernel('log_pdf_normal', _log_pdf_normal)
 pdf_normal = Exp('pdf_normal', log_pdf_normal)
 
-sample_discrete = CUFile('sample_discrete',
+sample_discrete_old = CUFile('sample_discrete_old',
                          'sample_discrete.cu')
 
-sample_discrete_logged = CUFile('sample_discrete_logged',
+sample_discrete_logged_old = CUFile('sample_discrete_logged_old',
                                 'sample_discrete_logged.cu')
 
-sample_discrete_new = CUFile('sample_discrete_new',
+sample_discrete = CUFile('sample_discrete',
                              'sampleFromMeasureMedium.cu')

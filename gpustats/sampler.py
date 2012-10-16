@@ -13,7 +13,7 @@ from pycuda.curandom import rand as curand
 
 cu_module = codegen.get_full_cuda_module()
 
-def sample_discrete_new(densities, logged=False,
+def sample_discrete(densities, logged=False,
                         return_gpuarray=False):
 
     """
@@ -46,7 +46,7 @@ def sample_discrete_new(densities, logged=False,
         gpu_densities = to_gpu(densities)
 
     # get gpu function
-    cu_func = cu_module.get_function('sample_discrete_new')
+    cu_func = cu_module.get_function('sample_discrete')
 
     # setup GPU data
     gpu_random = to_gpu(np.asarray(np.random.rand(n), dtype=np.float32))
@@ -79,8 +79,8 @@ def sample_discrete_new(densities, logged=False,
         return res
 
 
-
-def sample_discrete(in_densities, logged=False, pad=False,
+## depreciated 
+def sample_discrete_old(in_densities, logged=False, pad=False,
                     return_gpuarray=False):
     """
     Takes a categorical sample from the unnormalized univariate
@@ -110,9 +110,9 @@ def sample_discrete(in_densities, logged=False, pad=False,
     n, k = densities.shape
 
     if logged:
-        cu_func = cu_module.get_function('sample_discrete_logged')
+        cu_func = cu_module.get_function('sample_discrete_logged_old')
     else:
-        cu_func = cu_module.get_function('sample_discrete')
+        cu_func = cu_module.get_function('sample_discrete_old')
 
     if isinstance(densities, GPUArray):
         if densities.flags.f_contiguous:

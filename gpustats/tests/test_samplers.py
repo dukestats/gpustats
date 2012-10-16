@@ -34,7 +34,7 @@ def _compare_discrete(n, k):
     dens = densities[0,:].copy() / densities[0,:].sum()
     expected_mu = np.dot(np.arange(k), dens)
 
-    labels = gpusamp.sample_discrete_new(densities, logged=False)
+    labels = gpusamp.sample_discrete(densities, logged=False)
     est_mu = labels.mean()
     return est_mu, expected_mu
 
@@ -44,7 +44,7 @@ def _compare_logged(n, k):
     dens = dens / dens.sum()
     expected_mu = np.dot(np.arange(k), dens)
 
-    labels = gpusamp.sample_discrete_new(densities, logged=True)
+    labels = gpusamp.sample_discrete(densities, logged=True)
     est_mu = labels.mean()
     return est_mu, expected_mu
 
@@ -54,7 +54,7 @@ class TestDiscreteSampler(unittest.TestCase):
                   (100000, 9),
                   (100000, 16),
                   (100000, 20),
-                  (100000, 55)]
+                  (1000000, 35)]
 
     def _check_discrete(self, n, k):
         a, b = _compare_discrete(n, k)
@@ -75,7 +75,7 @@ class TestDiscreteSampler(unittest.TestCase):
 
 if __name__ == '__main__':
     print 'starting sampler'
-    a, b = _compare_logged(1000000, 3)
+    a, b = _compare_logged(1000000, 35)
     print a
     print b
 
