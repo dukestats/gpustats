@@ -48,3 +48,6 @@ sample_discrete = CUFile('sample_discrete',
 
 sample_discrete_logged = CUFile('sample_discrete_logged',
                                 'sample_discrete_logged.cu')
+
+sample_discrete_new = CUFile('sample_discrete_new',
+                             'sampleFromMeasureMedium.cu')

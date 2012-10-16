@@ -1,120 +1,120 @@
-// If compute cabability is 1.1 or 1.0 ... this really should be padded in T to a multiple of 16.
-// If    "        "        is higher, this should be pretty good because of caching and the
-// ability to read mis-alighned sequences of memory in 2 or less reads..
-
-
+// Original written by Marc Suchard 
+// Modified by Andrew Cron 
 
 __global__ void k_%(name)s(float* in_measure, /** Precomputed measure */
-						   float* in_random, /** Precomputed random number */
-						   int* out_component, /** Resultant choice */
-						   int iN, int iT) {
+	   		   float* in_random, /** Precomputed random number */
+			   int* out_component, /** Resultant choice */
+			   int iN, int iT, int logged) {
 
   const int sample_density_block = blockDim.x;
   const int sample_block = blockDim.y;
   const int thidx = threadIdx.x;
   const int thidy = threadIdx.y;
-  const int datumIndex = blockIdx.x * sample_block  + thidy;
+  const int datumIndex = blockIdx.x * sample_block + thidy;
   const int pdfIndex = datumIndex * iT;
   const int tid = thidy*sample_density_block + thidx;
+  const int stride = sample_density_block+1;
 
   // Make block size flexible ...
   extern __shared__ float shared_data[];
-  float* measure = shared_data; // sample_block by sample_density_block
-  float* sum = measure + sample_block*sample_density_block;
+  float* measure = shared_data; // sample_block by stride
+  float* sum = measure + sample_block*stride;
   float* work = sum + sample_block;
 
   // use 'work' in multiple places to save on memory
-  if (thidx == 0) {
-    sum[thidy] = 0;
-#if defined(LOGPDF)
-    work[thidy] = -10000;
-#else
-    work[thidy] = 0;
-#endif
+  if (tid < sample_block) {
+    sum[tid] = 0;
+    if(logged==1){
+        work[tid] = -10000;
+    } else {
+        work[tid] = 0;
+    }
   }
 
-#if defined(LOGPDF)
+
+  if(logged==1){
   //get the max values
   for(int chunk = 0; chunk < iT; chunk += sample_density_block) {
-    measure[thidy*sample_block + thidx] = in_measure[pdfIndex + chunk + thidx];
+    if(pdfIndex + chunk + thidx < iN*iT)
+       measure[thidy*stride + thidx] = in_measure[pdfIndex + chunk + thidx];
     __syncthreads();
 
-    if (thidx == 0) {
+    if (tid < sample_block) {
       for(int i=0; i<sample_density_block; i++) {
     if(chunk + i < iT){
-      float dcurrent = measure[thidy*sample_block + i];
-      if (dcurrent > work[thidy]) {
-        work[thidy] = dcurrent;
+      float dcurrent = measure[tid*stride + i];
+      if (dcurrent > work[tid]) {
+        work[tid] = dcurrent;
       }
     }
       }
     }
     __syncthreads();
   }
-#endif
+  }
 
 
   //get scaled cummulative pdfs
   for(int chunk = 0; chunk < iT; chunk += sample_density_block) {
-
-    measure[thidy*sample_block + thidx] = in_measure[pdfIndex + chunk + thidx];
+    if(pdfIndex + chunk + thidx < iN*iT)
+       measure[thidy*stride + thidx] = in_measure[pdfIndex + chunk + thidx];
 
     __syncthreads();
 
-    if (thidx == 0) {
+    if (tid < sample_block) {
       for(int i=0; i<sample_density_block; i++) {
     if (chunk + i < iT){
-#if defined(LOGPDF)
+      if(logged==1){
       //rescale and exp()
-      sum[thidy] += expf(measure[thidy*sample_block + i] - work[thidy]);
-#else
-      sum[thidy] += measure[thidy*sample_block + i];
-#endif
-      measure[thidy*sample_block + i] = sum[thidy];
+      sum[tid] += expf(measure[tid*stride + i] - work[tid]);
+      } else {
+      sum[tid] += measure[tid*stride + i];
+      }
+      measure[tid*stride + i] = sum[tid];
     }
       }
     }
 
-    if (chunk + thidx < iT)
-      in_measure[pdfIndex + chunk + thidx] = measure[thidy*sample_block + thidx];
-
     __syncthreads();
+
+    if(datumIndex < iN && chunk + thidx < iT)
+      in_measure[pdfIndex + chunk + thidx] = measure[thidy*stride + thidx];
+ 
   }
 
-#if defined(LOGPDF)
-  if (thidx == 0){
-    work[thidy] = 0;
+  __syncthreads();  
+
+  if (tid < sample_block && logged==1){
+    work[tid] = 0;
   }
-#endif
+
 
   float* randomNumber = sum;
   const int result_id = blockIdx.x * sample_block + tid;
-  if ( tid < sample_block )
+  if ( result_id < iN )
     randomNumber[tid] = in_random[result_id] * sum[tid];
-
-  // randomNumber = in_random[datumIndex] * sum[thidy];
 
   // Find the right bin for the random number ...
   for(int chunk = 0; chunk < iT; chunk += sample_density_block) {
-
-    measure[thidy*sample_block + thidx] = in_measure[pdfIndex + chunk + thidx];
+    if(pdfIndex + chunk + thidx < iN*iT)
+       measure[thidy*stride + thidx] = in_measure[pdfIndex + chunk + thidx];
     __syncthreads();
 
-    if (thidx == 0) {
+    if (tid < sample_block) {
 
       // storing the index in a float is better because it avoids
       // bank conflicts ...
       for(int i=0; i<sample_density_block; i++) {
     if (chunk + i < iT){
-      if (randomNumber[thidy] > measure[thidy*sample_block + i]){
-        work[thidy] = i + chunk + 1;
+      if (randomNumber[tid] > measure[tid*stride + i]){
+        work[tid] = i + chunk + 1;
       }
     }
       }
-      if ((int) work[thidy] >= iT) {work[thidy] = iT-1;}
+      if ( work[tid] >= iT) {work[tid] = iT-1;}
     }
+    __syncthreads();
   }
-  __syncthreads();
 
   // this is now coalesced
   if (result_id < iN && tid < sample_block)
