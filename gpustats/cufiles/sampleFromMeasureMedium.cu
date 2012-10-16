@@ -91,7 +91,7 @@ __global__ void k_%(name)s(float* in_measure, /** Precomputed measure */
 
   float* randomNumber = sum;
   const int result_id = blockIdx.x * sample_block + tid;
-  if ( result_id < iN )
+  if ( result_id < iN && tid < sample_block)
     randomNumber[tid] = in_random[result_id] * sum[tid];
 
   // Find the right bin for the random number ...

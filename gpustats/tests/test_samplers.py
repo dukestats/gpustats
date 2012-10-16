@@ -74,7 +74,8 @@ class TestDiscreteSampler(unittest.TestCase):
 
 
 if __name__ == '__main__':
-    a, b = _compare_logged(1000000, 750)
+    print 'starting sampler'
+    a, b = _compare_logged(1000000, 3)
     print a
     print b
 

@@ -58,12 +58,13 @@ def sample_discrete_new(densities, logged=False,
     else:
         x_block_dim = 32
 
+    y_block_dim = 16
     # setup GPU call
-    block_design = (x_block_dim, 32, 1)
-    grid_design = (int(n/32) + 1, 1)
+    block_design = (x_block_dim, y_block_dim, 1)
+    grid_design = (int(n/y_block_dim) + 1, 1)
 
-    shared_mem = 4 * ( (x_block_dim+1)*32 +  
-                     2 * 32 )
+    shared_mem = 4 * ( (x_block_dim+1)*y_block_dim +  
+                     2 * y_block_dim )  
 
     cu_func(gpu_densities, gpu_random, gpu_dest, 
             dims[0], dims[1], dims[2], 
